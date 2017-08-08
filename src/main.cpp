@@ -9,6 +9,7 @@
 #include "Eigen-3.3/Eigen/QR"
 #include "json.hpp"
 #include "path.h"
+#include "spline.h"
 
 using namespace std;
 
@@ -200,6 +201,20 @@ int main() {
   // Initialize Path Planner
 	Path path;
 	path.init();
+
+  tk::spline spline_x, spline_y;
+  spline_x.set_points(map_waypoints_s, map_waypoints_x);
+  spline_y.set_points(map_waypoints_s, map_waypoints_y);
+
+  Path::MAP *MAP = new Path::MAP;
+
+  // upsample map points with spline.
+  int spline_samples = 12000; // in meters
+  for (size_t i = 0; i < spline_samples; ++i) {
+    MAP->waypoints_x_upsampled.push_back(spline_x((i/spline_samples)*max_s));
+    MAP->waypoints_y_upsampled.push_back(spline_y((i/spline_samples)*max_s));
+    MAP->waypoints_s_upsampled.push_back((i/spline_samples)*max_s);
+  }
 
   h.onMessage([&map_waypoints_x,&map_waypoints_y,&map_waypoints_s,&map_waypoints_dx,&map_waypoints_dy](uWS::WebSocket<uWS::SERVER> ws, char *data, size_t length,
                      uWS::OpCode opCode) {
