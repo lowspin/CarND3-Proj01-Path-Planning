@@ -9,17 +9,18 @@
 #include "Eigen-3.3/Eigen/QR"
 #include "json.hpp"
 #include "path.h"
-#include "spline.h"
+
+//#include "helpers.h"
 
 using namespace std;
 
 // for convenience
 using json = nlohmann::json;
 
-// For converting back and forth between radians and degrees.
-constexpr double pi() { return M_PI; }
-double deg2rad(double x) { return x * pi() / 180; }
-double rad2deg(double x) { return x * 180 / pi(); }
+// // For converting back and forth between radians and degrees.
+// constexpr double pi() { return M_PI; }
+// double deg2rad(double x) { return x * pi() / 180; }
+// double rad2deg(double x) { return x * 180 / pi(); }
 
 // Checks if the SocketIO event has JSON data.
 // If there is data the JSON object in string format will be returned,
@@ -35,7 +36,7 @@ string hasData(string s) {
   }
   return "";
 }
-
+/*
 double distance(double x1, double y1, double x2, double y2)
 {
 	return sqrt((x2-x1)*(x2-x1)+(y2-y1)*(y2-y1));
@@ -160,7 +161,7 @@ vector<double> getXY(double s, double d, vector<double> maps_s, vector<double> m
 	return {x,y};
 
 }
-
+*/
 int main() {
   uWS::Hub h;
 
@@ -201,22 +202,12 @@ int main() {
   // Initialize Path Planner
 	Path path;
 	path.init();
-
-  tk::spline spline_x, spline_y;
-  spline_x.set_points(map_waypoints_s, map_waypoints_x);
-  spline_y.set_points(map_waypoints_s, map_waypoints_y);
-
-  Path::MAP *MAP = new Path::MAP;
+  path.start_time = chrono::high_resolution_clock::now();
 
   // upsample map points with spline.
-  int spline_samples = 12000; // in meters
-  for (size_t i = 0; i < spline_samples; ++i) {
-    MAP->waypoints_x_upsampled.push_back(spline_x((i/spline_samples)*max_s));
-    MAP->waypoints_y_upsampled.push_back(spline_y((i/spline_samples)*max_s));
-    MAP->waypoints_s_upsampled.push_back((i/spline_samples)*max_s);
-  }
+  path.Upsample_Waypoints(map_waypoints_x, map_waypoints_y, map_waypoints_s, max_s);
 
-  h.onMessage([&map_waypoints_x,&map_waypoints_y,&map_waypoints_s,&map_waypoints_dx,&map_waypoints_dy](uWS::WebSocket<uWS::SERVER> ws, char *data, size_t length,
+  h.onMessage([&map_waypoints_x,&map_waypoints_y,&map_waypoints_s,&map_waypoints_dx,&map_waypoints_dy,&path](uWS::WebSocket<uWS::SERVER> ws, char *data, size_t length,
                      uWS::OpCode opCode) {
     // "42" at the start of the message means there's a websocket message event.
     // The 4 signifies a websocket message
@@ -260,8 +251,72 @@ int main() {
 
 
           	// TODO: define a path made up of (x,y) points that the car will visit sequentially every .02 seconds
-          	msgJson["next_x"] = next_x_vals;
-          	msgJson["next_y"] = next_y_vals;
+            path.current_time = chrono::high_resolution_clock::now();
+  					auto time_difference = chrono::duration_cast<std::chrono::milliseconds>(path.current_time - path.start_time).count();
+  					//cout << "previous_path_size " << previous_path_x.size() << endl;
+  					//cout << time_difference << endl;
+  					// cout << chrono::high_resolution_clock::to_time_t(chrono::high_resolution_clock::now()) << endl;
+
+  					if (time_difference > 0)
+            {
+  						// cout <<  "time_difference " << time_difference << endl;
+
+  						// 0. set clock for next round
+  						path.start_time = chrono::high_resolution_clock::now();
+
+              // 1. Prediction - predict other cars
+
+              // 2. Behavior Planning
+              path.plan_target_sd();
+
+              // 3. Trajectory Generation
+              next_x_vals.push_back(previous_path_x[0]);
+              next_y_vals.push_back(previous_path_y[0]);
+
+              // 4. Execute and update previous path
+              msgJson["next_x"] = next_x_vals;
+              msgJson["next_y"] = next_y_vals;
+
+              msgJson["previous_path_x"] = next_x_vals;
+              msgJson["previous_path_y"] = next_y_vals;
+
+              msgJson["end_path_s"] = path.target_SD.s;
+              msgJson["end_path_d"] = path.target_SD.d;
+/*
+  						// 1. Merge previous path and update car state
+  						auto Previous_path = path.merge_previous_path(MAP, previous_path_x,
+  							previous_path_y, car_yaw, car_s, car_d, end_path_s, end_path_d);
+
+  						// 2. Update vehicles with sensor fusion readings
+  						path.prediction(sensor_fusion);
+
+  						// 3. Update our car's state (pending removal of arguments here as doing update at 1. now.0
+  						path.behavior_update_state(MAP, car_x, car_y, Previous_path.s, Previous_path.d, car_yaw, car_speed);
+
+  						// 4. Generate trajectory
+  						auto trajectory = path.generate_trajectory();
+
+  						// 5. Build trajectory using time
+  						auto S_D_ = path.build_trajectory(trajectory);
+
+  						// 6. Convert to X and Y and append previous path
+  						X_Y_ = path.convert_new_path_to_X_Y_and_merge(MAP, S_D_, Previous_path);
+
+
+  						//cout << X_Y_.X.size() << endl;
+
+  						msgJson["next_x"] = X_Y_.X;
+  						msgJson["next_y"] = X_Y_.Y;
+*/
+
+  					}
+
+            else
+            {
+    					//cout << "Using previous path\n " << endl;
+    					msgJson["next_x"] = previous_path_x;
+    					msgJson["next_y"] = previous_path_y;
+				    }
 
           	auto msg = "42[\"control\","+ msgJson.dump()+"]";
 
