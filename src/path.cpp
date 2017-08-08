@@ -13,12 +13,13 @@
 #include "json.hpp"
 #include "spline.h"
 
-path::path() {}
-path::~path() {}
-
 using namespace std;
 using Eigen::MatrixXd;
 using Eigen::VectorXd;
 
-void path::init() {
+Path::Path(){}
+Path::~Path(){}
+
+void Path::init() {
+  start_time = chrono::high_resolution_clock::now();
 }
