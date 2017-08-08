@@ -3,8 +3,13 @@
 
 #include <vector>
 #include <chrono>
-//#include <math.h>
-//#include "helpers.h"
+
+// for boundary conditions and time for JMT
+struct jmt_params {
+		std::vector<double> start;
+		std::vector<double> end;
+		double T;
+};
 
 class Path {
 public:
@@ -28,7 +33,7 @@ public:
   struct Path_XY {
 		std::vector<double> x;
 		std::vector<double> y;
-	};
+	} planned_path;
 
 	struct Path_SD {
 		std::vector<double> s;
@@ -48,8 +53,14 @@ public:
 	void init();
 
 	void plan_target_sd();
-	void Upsample_Waypoints(std::vector<double> map_waypoints_x,
-		std::vector<double> map_waypoints_y, std::vector<double> map_waypoints_s, double max_s);
+	void Upsample_Waypoints(
+		std::vector<double> map_waypoints_x,std::vector<double> map_waypoints_y,
+		std::vector<double> map_waypoints_s, double max_s);
+
+	// Jerk Minimizing Trajectory
+	std::vector<double> JMT(std::vector< double> start, std::vector <double> end, double T);
+
+	void generate_trajectory(std::vector<double> previous_path_x, std::vector<double> previous_path_y);
 
 };
 
