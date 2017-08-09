@@ -127,7 +127,6 @@ void Path::generate_trajectory(vector<double> map_waypoints_x, vector<double> ma
   vector<double> previous_path_x, vector<double> previous_path_y){
 
   //vector<double> targetxy = getXY(target_SD.s, target_SD.d, map_waypoints_s, map_waypoints_x, map_waypoints_y);
-    cout<< "b1: " << map_waypoints_s.size() << endl;
   double targetspeed_mps = 50.0 *1.6*1000/3600;
 
   vector<double> evaltimes;
@@ -161,12 +160,15 @@ void Path::generate_trajectory(vector<double> map_waypoints_x, vector<double> ma
   vector<double> jmt_coeffs_d = JMT(jmt_d.start, jmt_d.end, jmt_d.T);
   vector<double> path_d = polyvals(jmt_coeffs_d, evaltimes);
 
+  planned_path.x.clear();
+  planned_path.y.clear();
+
   if (1) //(previous_path_x.size()>0)
   {
     for (int i=0; i<50; i++){
       vector<double> pathxy = getXY(path_s[i],path_d[i],map_waypoints_s, map_waypoints_x, map_waypoints_y);
       planned_path.x.push_back(pathxy[0]);
-      planned_path.x.push_back(pathxy[1]);
+      planned_path.y.push_back(pathxy[1]);
     }
   }
   else // initial state

@@ -74,7 +74,6 @@ int main() {
 
   // upsample map points with spline.
   //path.Upsample_Waypoints(map_waypoints_x, map_waypoints_y, map_waypoints_s, max_s);
-cout<< "b: " << map_waypoints_s.size() << endl;
 
   h.onMessage([&map_waypoints_x,&map_waypoints_y,&map_waypoints_s,&map_waypoints_dx,&map_waypoints_dy,&path](uWS::WebSocket<uWS::SERVER> ws, char *data, size_t length,
                      uWS::OpCode opCode) {
@@ -136,11 +135,9 @@ cout<< "b: " << map_waypoints_s.size() << endl;
   						path.start_time = chrono::high_resolution_clock::now();
 
               // 1. Prediction - predict other cars
-cout<< "b0: " << map_waypoints_s.size() << endl;
               // 2. Behavior Planning
               path.plan_target_sd(map_waypoints_x, map_waypoints_y,
                 map_waypoints_s, map_waypoints_dx, map_waypoints_dy);
-cout<< "b00: " << map_waypoints_s.size() << endl;
               // 3. Trajectory Generation
               path.generate_trajectory(map_waypoints_x, map_waypoints_y, map_waypoints_s, previous_path_x, previous_path_y);
 
@@ -148,7 +145,7 @@ cout<< "b00: " << map_waypoints_s.size() << endl;
               {
                 next_x_vals.push_back(path.planned_path.x[i]);
                 next_y_vals.push_back(path.planned_path.y[i]);
-                cout << path.planned_path.x[i] << ", " << path.planned_path.y[i] << endl;
+                cout << i <<": " << path.planned_path.x[i] << ", " << path.planned_path.y[i] << endl;
               }
               cout << next_x_vals.size() << endl << endl;
 
