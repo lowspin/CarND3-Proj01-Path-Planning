@@ -73,7 +73,8 @@ int main() {
   path.start_time = chrono::high_resolution_clock::now();
 
   // upsample map points with spline.
-  path.Upsample_Waypoints(map_waypoints_x, map_waypoints_y, map_waypoints_s, max_s);
+  //path.Upsample_Waypoints(map_waypoints_x, map_waypoints_y, map_waypoints_s, max_s);
+cout<< "b: " << map_waypoints_s.size() << endl;
 
   h.onMessage([&map_waypoints_x,&map_waypoints_y,&map_waypoints_s,&map_waypoints_dx,&map_waypoints_dy,&path](uWS::WebSocket<uWS::SERVER> ws, char *data, size_t length,
                      uWS::OpCode opCode) {
@@ -119,26 +120,29 @@ int main() {
 
 
           	// TODO: define a path made up of (x,y) points that the car will visit sequentially every .02 seconds
+            path.updateLocalData(car_x,car_y,car_s,car_d,car_yaw,car_speed);
+
             path.current_time = chrono::high_resolution_clock::now();
   					auto time_difference = chrono::duration_cast<std::chrono::milliseconds>(path.current_time - path.start_time).count();
-  					//cout << "previous_path_size " << previous_path_x.size() << endl;
-  					//cout << time_difference << endl;
+  					cout << "previous_path_size " << previous_path_x.size() << endl;
+  					cout << time_difference << endl;
   					// cout << chrono::high_resolution_clock::to_time_t(chrono::high_resolution_clock::now()) << endl;
 
   					if (time_difference > 0)
             {
-  						cout <<  "time_difference " << time_difference << endl;
+  						//cout <<  "time_difference " << time_difference << endl;
 
   						// 0. set clock for next round
   						path.start_time = chrono::high_resolution_clock::now();
 
               // 1. Prediction - predict other cars
-
+cout<< "b0: " << map_waypoints_s.size() << endl;
               // 2. Behavior Planning
-              path.plan_target_sd();
-
+              path.plan_target_sd(map_waypoints_x, map_waypoints_y,
+                map_waypoints_s, map_waypoints_dx, map_waypoints_dy);
+cout<< "b00: " << map_waypoints_s.size() << endl;
               // 3. Trajectory Generation
-              path.generate_trajectory(previous_path_x, previous_path_y);
+              path.generate_trajectory(map_waypoints_x, map_waypoints_y, map_waypoints_s, previous_path_x, previous_path_y);
 
               for (int i=0; i<path.planned_path.x.size(); i++)
               {
