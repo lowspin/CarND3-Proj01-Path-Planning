@@ -21,7 +21,17 @@ using Eigen::VectorXd;
 Path::Path(){}
 Path::~Path(){}
 
-void Path::init() {
+void Path::init(vector<double> map_x,vector<double> map_y,vector<double> map_s,
+  vector<double> map_dx,vector<double> map_dy,double max_track_s) {
+
+  map_waypoints_x = map_x;
+  map_waypoints_y = map_y;
+  map_waypoints_s = map_s;
+  map_waypoints_dx = map_dx;
+  map_waypoints_dy = map_dy;
+
+  max_s = max_track_s;
+
   start_time = chrono::high_resolution_clock::now();
 }
 
@@ -34,7 +44,7 @@ void Path::updateLocalData(double x,double y,double s,double d,double yaw,double
 	car_speed = speed;
 }
 
-void Path::Upsample_Waypoints(vector<double> map_waypoints_x, vector<double> map_waypoints_y, vector<double> map_waypoints_s, double max_s) {
+// void Path::Upsample_Waypoints(vector<double> map_waypoints_x, vector<double> map_waypoints_y, vector<double> map_waypoints_s, double max_s) {
   // tk::spline spline_x, spline_y;
   // spline_x.set_points(map_waypoints_s, map_waypoints_x);
   // spline_y.set_points(map_waypoints_s, map_waypoints_y);
@@ -49,16 +59,12 @@ void Path::Upsample_Waypoints(vector<double> map_waypoints_x, vector<double> map
   //   waypoints_upsampled.y.push_back(spline_y(i));
   //   waypoints_upsampled.s.push_back(i);
   // }
-}
+// }
 
-void Path::plan_target_sd(vector<double> map_waypoints_x, vector<double> map_waypoints_y,
-   vector<double> map_waypoints_s, vector<double> map_waypoints_dx, vector<double> map_waypoints_dy) {
+void Path::plan_target_sd(int targetlane, double speed_mph) {
 
-  int targetlane = 2;
-
-  double speed_mph = 50.0;
   target_SD.s = car_s + (1.0*speed_mph*1.6/1000/3600); // 1.0 sec ahead
-  target_SD.d = (targetlane-1)*4.0+2.0;
+  target_SD.d = (targetlane*4.0)+2.0;
 
   // vector<double> targetxy = getXY(target_s, (targetlane-1)*4.0+2.0, map_waypoints_s, map_waypoints_x, map_waypoints_y);
   //
@@ -72,6 +78,14 @@ void Path::plan_target_sd(vector<double> map_waypoints_x, vector<double> map_way
   //
   // target_SD.s = targetsd[0]; //map_waypoints_s[closewaypoint];
   // target_SD.d = targetsd[1]; //map_waypoints_s[closewaypoint];
+}
+
+void Path::behavior() {
+  // output: target (s,d)
+  int targetlane = 1;
+  double speed_mph = 50.0;
+
+  plan_target_sd(targetlane, speed_mph);
 }
 
 // Jerk Minimizing Trajectory
@@ -123,8 +137,115 @@ vector<double> Path::JMT(vector< double> start, vector <double> end, double T){
   return result;
 }
 
-void Path::generate_trajectory(vector<double> map_waypoints_x, vector<double> map_waypoints_y, vector<double> map_waypoints_s,
-  vector<double> previous_path_x, vector<double> previous_path_y){
+void Path::trajectory(vector<double> previous_path_x, vector<double> previous_path_y, double end_path_s, double end_path_d){
+  double pos_x;
+  double pos_y;
+  double pos_s;
+  double angle;
+  double prev_x;
+  double prev_y;
+  vector<double> ptsx;
+  vector<double> ptsy;
+
+  int path_size = previous_path_x.size();
+
+  double ref_vel = 49.5;
+  double ref_lane = 1;
+
+  if( path_size<2 )
+  {
+      pos_x = car_x;
+      pos_y = car_y;
+      angle = deg2rad(car_yaw);
+      prev_x = car_x - cos(angle);
+      prev_y = car_y - sin(angle);
+
+      pos_s = car_s;
+  }
+  else
+  {
+      pos_x = previous_path_x[path_size-1];
+      pos_y = previous_path_y[path_size-1];
+      prev_x = previous_path_x[path_size-2];
+      prev_y = previous_path_y[path_size-2];
+      angle = atan2(pos_y-prev_y, pos_x-prev_x);
+
+      pos_s = end_path_s;
+  }
+
+  //cout << "traj: pos_x " << pos_x << ", pos_y " << pos_y << ", pos_s " << pos_s << ", angle " << angle << endl;
+  ptsx.push_back(prev_x);
+  ptsx.push_back(pos_x);
+  ptsy.push_back(prev_y);
+  ptsy.push_back(pos_y);
+
+  vector<double> next_wp0 = getXY(pos_s+30,(ref_lane*4)+2,map_waypoints_s,map_waypoints_x,map_waypoints_y);
+  vector<double> next_wp1 = getXY(pos_s+60,(ref_lane*4)+2,map_waypoints_s,map_waypoints_x,map_waypoints_y);
+  vector<double> next_wp2 = getXY(pos_s+90,(ref_lane*4)+2,map_waypoints_s,map_waypoints_x,map_waypoints_y);
+
+  ptsx.push_back(next_wp0[0]);
+  ptsx.push_back(next_wp1[0]);
+  ptsx.push_back(next_wp2[0]);
+
+  ptsy.push_back(next_wp0[1]);
+  ptsy.push_back(next_wp1[1]);
+  ptsy.push_back(next_wp2[1]);
+
+  for (int i=0; i<ptsx.size(); i++){
+    //shift ref to zero
+    double shift_x = ptsx[i] - pos_x;
+    double shift_y = ptsy[i] - pos_y;
+
+    ptsx[i] = shift_x*cos(0-angle) - shift_y*sin(0-angle);
+    ptsy[i] = shift_x*sin(0-angle) + shift_y*cos(0-angle);
+  }
+
+  // create spline
+  tk::spline s;
+
+  //set (x,y) points to spline
+  s.set_points(ptsx,ptsy);
+
+  planned_path.x.clear();
+  planned_path.y.clear();
+
+  for(int i = 0; i < path_size; i++)
+  {
+    planned_path.x.push_back(previous_path_x[i]);
+    planned_path.y.push_back(previous_path_y[i]);
+  }
+
+  // break up spline points to match velocity
+  double target_x = 30.0;
+  double target_y = s(target_x);
+  double target_dist = sqrt( (target_x*target_x) + (target_y*target_y));
+
+  double x_add_on = 0.0;
+
+  for (int i=1; i<=50-path_size; i++)
+  {
+    double N = (target_dist/(.02*ref_vel/2.24));
+    double x_point = x_add_on + (target_x/N);
+    double y_point = s(x_point);
+
+    x_add_on = x_point;
+
+    double x_ref = x_point;
+    double y_ref = y_point;
+
+    // rotate back to normal
+    x_point = x_ref*cos(angle) - y_ref*sin(angle);
+    y_point = x_ref*sin(angle) + y_ref*cos(angle);
+
+    x_point += pos_x;
+    y_point += pos_y;
+
+    planned_path.x.push_back(x_point);
+    planned_path.y.push_back(y_point);
+  }
+}
+
+void Path::generate_trajectory(vector<double> previous_path_x, vector<double> previous_path_y){
 
   //vector<double> targetxy = getXY(target_SD.s, target_SD.d, map_waypoints_s, map_waypoints_x, map_waypoints_y);
   double targetspeed_mps = 50.0 *1.6*1000/3600;

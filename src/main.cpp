@@ -69,7 +69,7 @@ int main() {
 
   // Initialize Path Planner
 	Path path;
-	path.init();
+	path.init(map_waypoints_x,map_waypoints_y,map_waypoints_s,map_waypoints_dx,map_waypoints_dy,max_s);
   path.start_time = chrono::high_resolution_clock::now();
 
   // upsample map points with spline.
@@ -123,8 +123,8 @@ int main() {
 
             path.current_time = chrono::high_resolution_clock::now();
   					auto time_difference = chrono::duration_cast<std::chrono::milliseconds>(path.current_time - path.start_time).count();
-  					cout << "previous_path_size " << previous_path_x.size() << endl;
-  					cout << time_difference << endl;
+  					// cout << "previous_path_size " << previous_path_x.size() << endl;
+  					// cout << time_difference << endl;
   					// cout << chrono::high_resolution_clock::to_time_t(chrono::high_resolution_clock::now()) << endl;
 
   					if (time_difference > 0)
@@ -135,19 +135,20 @@ int main() {
   						path.start_time = chrono::high_resolution_clock::now();
 
               // 1. Prediction - predict other cars
-              // 2. Behavior Planning
-              path.plan_target_sd(map_waypoints_x, map_waypoints_y,
-                map_waypoints_s, map_waypoints_dx, map_waypoints_dy);
-              // 3. Trajectory Generation
-              path.generate_trajectory(map_waypoints_x, map_waypoints_y, map_waypoints_s, previous_path_x, previous_path_y);
 
-              for (int i=0; i<path.planned_path.x.size(); i++)
+              // 2. Behavior Planning
+              path.behavior();
+
+              // 3. Trajectory Generation
+              path.trajectory(previous_path_x, previous_path_y, end_path_s, end_path_d);
+              // path.generate_trajectory(previous_path_x, previous_path_y);
+
+              for (int i=0; i<50; i++)
               {
                 next_x_vals.push_back(path.planned_path.x[i]);
                 next_y_vals.push_back(path.planned_path.y[i]);
-                cout << i <<": " << path.planned_path.x[i] << ", " << path.planned_path.y[i] << endl;
+                // cout << i <<": " << path.planned_path.x[i] << ", " << path.planned_path.y[i] << endl;
               }
-              cout << next_x_vals.size() << endl << endl;
 
               // 4. Execute and update previous path
               msgJson["next_x"] = next_x_vals;

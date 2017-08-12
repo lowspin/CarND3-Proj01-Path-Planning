@@ -51,6 +51,14 @@ public:
 
 	std::chrono::high_resolution_clock::time_point start_time, current_time;
 
+	// track and  waypoints
+	std::vector<double> map_waypoints_x;
+  std::vector<double> map_waypoints_y;
+  std::vector<double> map_waypoints_s;
+  std::vector<double> map_waypoints_dx;
+  std::vector<double> map_waypoints_dy;
+	double max_s;
+
 	//Path_SXY waypoints_upsampled;
 	Path_XY planned_path;
 	Point_SD target_SD;
@@ -63,23 +71,23 @@ public:
 	double car_yaw;
 	double car_speed;
 
-	void init();
+	void init(std::vector<double>map_x, std::vector<double>map_y,
+		std::vector<double>map_s, std::vector<double>map_dx, std::vector<double>map_dy, double max_track_s);
 
 	void updateLocalData(double x,double y,double s,double d,double yaw,double speed);
 
-	void plan_target_sd(
-		std::vector<double> map_waypoints_x, std::vector<double> map_waypoints_y, std::vector<double> map_waypoints_s,
-		std::vector<double> map_waypoints_dx, std::vector<double> map_waypoints_dy);
+	void plan_target_sd(int targetlane, double speed_mph);
+	void behavior();
 
-	void Upsample_Waypoints(
-		std::vector<double> map_waypoints_x,std::vector<double> map_waypoints_y,
-		std::vector<double> map_waypoints_s, double max_s);
+	// void Upsample_Waypoints(
+	// 	std::vector<double> map_waypoints_x,std::vector<double> map_waypoints_y,
+	// 	std::vector<double> map_waypoints_s, double max_s);
 
 	// Jerk Minimizing Trajectory
 	std::vector<double> JMT(std::vector< double> start, std::vector <double> end, double T);
 
-	void generate_trajectory(std::vector<double> map_waypoints_x, std::vector<double> map_waypoints_y, std::vector<double> map_waypoints_s,
-		std::vector<double> previous_path_x, std::vector<double> previous_path_y);
+	void trajectory(std::vector<double> previous_path_x, std::vector<double> previous_path_y, double end_path_s, double end_path_d);
+	void generate_trajectory(std::vector<double> previous_path_x, std::vector<double> previous_path_y);
 
 };
 
