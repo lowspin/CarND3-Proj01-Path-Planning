@@ -31,7 +31,7 @@ void Path::init(vector<double> map_x,vector<double> map_y,vector<double> map_s,
   map_waypoints_dy = map_dy;
 
   max_s = max_track_s;
-
+  my_target_speed = 0.0;
   start_time = chrono::high_resolution_clock::now();
 }
 
@@ -40,52 +40,95 @@ void Path::updateLocalData(double x,double y,double s,double d,double yaw,double
 	car_y = y;
 	car_s = s;
 	car_d = d;
+  car_lane = lane_from_d(d);
 	car_yaw = yaw;
 	car_speed = speed;
+  // if(car_speed<1.0){
+  //   my_target_speed = 0.0;
+  // }
 }
 
-// void Path::Upsample_Waypoints(vector<double> map_waypoints_x, vector<double> map_waypoints_y, vector<double> map_waypoints_s, double max_s) {
-  // tk::spline spline_x, spline_y;
-  // spline_x.set_points(map_waypoints_s, map_waypoints_x);
-  // spline_y.set_points(map_waypoints_s, map_waypoints_y);
-  //
-  // // upsample map points with spline.
-  // int spline_samples = 12000; // in meters
-  // for (size_t i = 0; i < spline_samples; ++i) {
-  //   // waypoints_upsampled.x.push_back(spline_x((i/spline_samples)*max_s));
-  //   // waypoints_upsampled.y.push_back(spline_y((i/spline_samples)*max_s));
-  //   // waypoints_upsampled.s.push_back((i/spline_samples)*max_s);
-  //   waypoints_upsampled.x.push_back(spline_x(i));
-  //   waypoints_upsampled.y.push_back(spline_y(i));
-  //   waypoints_upsampled.s.push_back(i);
-  // }
-// }
+void Path::prediction(vector< vector<double>> sensor_fusion) {
+  double d, vx, vy, check_speed, check_s, check_s_future;
+  vector<double> car_future;
+  double time_horizon_sec = 1.0;
+  int lane;
 
-void Path::plan_target_sd(int targetlane, double speed_mph) {
+  traffic_now.clear();
+  traffic_future.clear();
 
-  target_SD.s = car_s + (1.0*speed_mph*1.6/1000/3600); // 1.0 sec ahead
-  target_SD.d = (targetlane*4.0)+2.0;
+  traffic_now = sensor_fusion;
 
-  // vector<double> targetxy = getXY(target_s, (targetlane-1)*4.0+2.0, map_waypoints_s, map_waypoints_x, map_waypoints_y);
-  //
-  // // double targetx = map_waypoints_x[index%181]+((targetlane-1)*4.0+2.0)*map_waypoints_dx[index%181];
-  // // double targety = map_waypoints_y[index%181]+((targetlane-1)*4.0+2.0)*map_waypoints_dy[index%181];
-  // double targetx = targetxy[0];
-  // double targety = targetxy[1];
-  // double theta =
-  //
-  // vector<double> targetsd = getFrenet( targetx, targety, theta, map_waypoints_x, map_waypoints_x);
-  //
-  // target_SD.s = targetsd[0]; //map_waypoints_s[closewaypoint];
-  // target_SD.d = targetsd[1]; //map_waypoints_s[closewaypoint];
+  for (int i=0; i<traffic_now.size(); i++){
+    d = traffic_now[i][6];
+    lane = lane_from_d(d);
+
+    vx = traffic_now[i][3];
+    vy = traffic_now[i][4];
+    check_speed = sqrt(vx*vx+vy*vy);
+    check_s = traffic_now[i][5];
+    check_s_future = check_s + 1.0*check_speed;
+
+    car_future.clear();
+    car_future.push_back(lane);
+    car_future.push_back(check_s_future);
+
+    traffic_future.push_back(car_future);
+  }
+}
+
+void Path::plan_target_sd(int targetlane, double target_s, double speed_mph) {
+  my_target_s = target_s;
+  my_target_lane = targetlane;
+  my_target_speed = speed_mph;
+  cout << "set lane=" << my_target_lane << ", speed=" << my_target_speed << ", s=" << my_target_s << endl;
 }
 
 void Path::behavior() {
-  // output: target (s,d)
-  int targetlane = 1;
-  double speed_mph = 50.0;
+  // purpose: decide target (s,d)
+  int check_lane;
+  double check_s_future;
+  double check_s;
+  double vx,vy,check_speed;
+  bool too_close = false;
 
-  plan_target_sd(targetlane, speed_mph);
+  for (int i=0; i<traffic_future.size(); i++){
+    check_lane = traffic_future[i][0];
+    check_s = traffic_now[i][5];
+    check_s_future = traffic_future[i][1];
+    if(check_lane == car_lane){
+      if( (check_s_future>car_s) && (check_s_future-car_s<30.0) ) {
+      //if( (check_s>car_s) && (check_s-car_s<60.0) ) {
+        too_close = true;
+        // vx = traffic_now[i][3];
+        // vy = traffic_now[i][4];
+        // check_speed = sqrt(vx*vx+vy*vy);
+      }
+    }
+  }
+
+  // double speed_mph = 49.9;
+  double max_speed = 49.9;
+  double speed_mph = my_target_speed;
+  if (too_close){
+    speed_mph -= 5.0; // 5mph = 2.2352 m/s;
+  } else if (speed_mph<max_speed) {
+    //speed_mph += (speed_mph<10.0)? 1.0 : 5.0;
+    if (car_speed<3.0) speed_mph=car_speed+1.0;
+    else if (car_speed<20.0) speed_mph+=2.0; //=car_speed+2.0;
+    else if (car_speed<30.0) speed_mph+=3.0; //=car_speed+3.0;
+    else if (car_speed<40.0) speed_mph+=4.0; //=car_speed+4.0;
+    else speed_mph+=5.0;//=car_speed+5.0;
+  }
+  speed_mph = (speed_mph<0)?0.0:speed_mph;
+  speed_mph = (speed_mph>max_speed)?max_speed:speed_mph;
+  int targetlane = 1; // {0,1,2}
+  double target_s = car_s + (1.0*speed_mph*0.44704); // 1.0 sec ahead
+
+  if(too_close){
+    cout << "Too close! set speed=" << speed_mph << endl;
+  }
+  plan_target_sd(targetlane, target_s, speed_mph);
 }
 
 // Jerk Minimizing Trajectory
@@ -149,8 +192,8 @@ void Path::trajectory(vector<double> previous_path_x, vector<double> previous_pa
 
   int path_size = previous_path_x.size();
 
-  double ref_vel = 49.5;
-  double ref_lane = 1;
+  double ref_vel = my_target_speed;
+  double ref_lane = my_target_lane;
 
   if( path_size<2 )
   {
@@ -248,7 +291,7 @@ void Path::trajectory(vector<double> previous_path_x, vector<double> previous_pa
 void Path::generate_trajectory(vector<double> previous_path_x, vector<double> previous_path_y){
 
   //vector<double> targetxy = getXY(target_SD.s, target_SD.d, map_waypoints_s, map_waypoints_x, map_waypoints_y);
-  double targetspeed_mps = 50.0 *1.6*1000/3600;
+  double targetspeed_mps = 50.0 *0.44704;
 
   vector<double> evaltimes;
   for (int i=0; i<50; i++){
@@ -260,7 +303,7 @@ void Path::generate_trajectory(vector<double> previous_path_x, vector<double> pr
   jmt_s.start.push_back(car_s);
   jmt_s.start.push_back(car_speed);
   jmt_s.start.push_back(0.0);
-  jmt_s.end.push_back(target_SD.s);
+  jmt_s.end.push_back(my_target_s);
   jmt_s.end.push_back(targetspeed_mps);
   jmt_s.end.push_back(0.0);
   jmt_s.T = 1.0;
@@ -273,7 +316,7 @@ void Path::generate_trajectory(vector<double> previous_path_x, vector<double> pr
   jmt_d.start.push_back(car_d);
   jmt_d.start.push_back(0.0);
   jmt_d.start.push_back(0.0);
-  jmt_d.end.push_back(target_SD.d);
+  jmt_d.end.push_back((my_target_lane*4.0)+2.0);
   jmt_d.end.push_back(0.0);
   jmt_d.end.push_back(0.0);
   jmt_d.T = 1.0;

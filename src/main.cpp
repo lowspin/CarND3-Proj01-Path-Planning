@@ -135,6 +135,8 @@ int main() {
   						path.start_time = chrono::high_resolution_clock::now();
 
               // 1. Prediction - predict other cars
+              //cout << typeid(sensor_fusion) << ": " << typeid(sensor_fusion).name() << endl;
+              path.prediction(sensor_fusion);
 
               // 2. Behavior Planning
               path.behavior();

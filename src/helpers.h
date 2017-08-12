@@ -136,6 +136,18 @@ vector<double> getXY(double s, double d, vector<double> maps_s, vector<double> m
 
 }
 
+int lane_from_d(double d){
+	int lane=-1;
+	if (d>0 && d<=4.0){
+		lane = 0;
+	} else if (d>4.0 && d<=8.0) {
+		lane = 1;
+	} else if (d>8.0 && d<=12.0) {
+		lane = 2;
+	}
+	return lane;
+}
+
 // evaluate polynomial at given values
 vector<double> polyvals(vector<double> coeffs, vector<double> vals){
   //s(t) = a_0 + a_1 * t + a_2 * t**2 + a_3 * t**3 + a_4 * t**4 + a_5 * t**5
