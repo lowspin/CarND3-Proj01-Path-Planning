@@ -3,6 +3,7 @@
 
 #include <vector>
 #include <chrono>
+#include <string>
 
 // struct MAP {
 // 	std::vector<double> waypoints_s_upsampled = {};
@@ -81,6 +82,9 @@ public:
 	int my_target_lane;
 	double my_target_speed;
 
+	// Behabior planning state
+	std::string behavior_state;
+
 	void init(std::vector<double>map_x, std::vector<double>map_y,
 		std::vector<double>map_s, std::vector<double>map_dx, std::vector<double>map_dy, double max_track_s);
 
@@ -98,6 +102,7 @@ public:
 	std::vector<double> JMT(std::vector< double> start, std::vector <double> end, double T);
 
 	void trajectory(std::vector<double> previous_path_x, std::vector<double> previous_path_y, double end_path_s, double end_path_d);
+	void gen_trajectory(std::vector<double> previous_path_x, std::vector<double> previous_path_y);
 	void generate_trajectory(std::vector<double> previous_path_x, std::vector<double> previous_path_y);
 
 };

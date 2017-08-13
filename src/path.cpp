@@ -31,7 +31,10 @@ void Path::init(vector<double> map_x,vector<double> map_y,vector<double> map_s,
   map_waypoints_dy = map_dy;
 
   max_s = max_track_s;
-  my_target_speed = 0.0;
+  my_target_speed = 49.9; //0.0;
+
+  behavior_state = "KeepLane";
+
   start_time = chrono::high_resolution_clock::now();
 }
 
@@ -86,26 +89,53 @@ void Path::plan_target_sd(int targetlane, double target_s, double speed_mph) {
 
 void Path::behavior() {
   // purpose: decide target (s,d)
-  int check_lane;
-  double check_s_future;
-  double check_s;
-  double vx,vy,check_speed;
+  behavior_state = "KeepLane";
+
+  int targetlane; // {0,1,2}
+
+  if (behavior_state == "KeepLane"){
+    targetlane = car_lane;
+  }
+
+  double max_speed = 49.9;
+  double speed_mph = max_speed; //my_target_speed;
+  double target_s = 50.0; //my_target_s;
+  double check_speed;
+  double onecarlength = 4.0;
   bool too_close = false;
 
-  for (int i=0; i<traffic_future.size(); i++){
-    check_lane = traffic_future[i][0];
-    check_s = traffic_now[i][5];
-    check_s_future = traffic_future[i][1];
-    if(check_lane == car_lane){
-      if( (check_s_future>car_s) && (check_s_future-car_s<30.0) ) {
-      //if( (check_s>car_s) && (check_s-car_s<60.0) ) {
-        too_close = true;
-        // vx = traffic_now[i][3];
-        // vy = traffic_now[i][4];
-        // check_speed = sqrt(vx*vx+vy*vy);
+  if (behavior_state == "KeepLane"){
+
+
+    int check_lane;
+    double check_s_future;
+    double check_s;
+    double vx,vy;
+
+    for (int i=0; i<traffic_future.size(); i++){
+
+      check_lane = traffic_future[i][0];
+      check_s = traffic_now[i][5];
+      check_s_future = traffic_future[i][1];
+
+      if(check_lane == car_lane){
+        if( (check_s_future>car_s) && (check_s_future-car_s<(max_speed*0.44704)) ) {
+          //if( (check_s>car_s) && (check_s-car_s<60.0) ) {
+          too_close = true;
+
+          vx = traffic_now[i][3];
+          vy = traffic_now[i][4];
+          check_speed = sqrt(vx*vx+vy*vy);
+
+          speed_mph = check_speed * 2.23694;
+          target_s = check_s - (1.0*onecarlength);
+        }
       }
     }
+
   }
+
+/*
 
   // double speed_mph = 49.9;
   double max_speed = 49.9;
@@ -122,12 +152,13 @@ void Path::behavior() {
   }
   speed_mph = (speed_mph<0)?0.0:speed_mph;
   speed_mph = (speed_mph>max_speed)?max_speed:speed_mph;
-  int targetlane = 1; // {0,1,2}
   double target_s = car_s + (1.0*speed_mph*0.44704); // 1.0 sec ahead
+  */
 
   if(too_close){
     cout << "Too close! set speed=" << speed_mph << endl;
   }
+
   plan_target_sd(targetlane, target_s, speed_mph);
 }
 
@@ -288,25 +319,90 @@ void Path::trajectory(vector<double> previous_path_x, vector<double> previous_pa
   }
 }
 
-void Path::generate_trajectory(vector<double> previous_path_x, vector<double> previous_path_y){
+void Path::gen_trajectory(vector<double> previous_path_x, vector<double> previous_path_y){
+  double ref_vel = my_target_speed;
+  double ref_lane = my_target_lane;
 
-  //vector<double> targetxy = getXY(target_SD.s, target_SD.d, map_waypoints_s, map_waypoints_x, map_waypoints_y);
-  double targetspeed_mps = 50.0 *0.44704;
+  double pos_x;
+  double pos_y;
+  double pos_s;
+  double angle;
+  double prev_x;
+  double prev_y;
+  vector<double> ptss;
+  vector<double> ptsx;
+  vector<double> ptsy;
 
-  vector<double> evaltimes;
-  for (int i=0; i<50; i++){
-    evaltimes.push_back(0.02*i); // each point is 20ms apart
+  cout << car_x << ", " << car_y << endl;
+  pos_x = car_x;
+  pos_y = car_y;
+  // angle = deg2rad(car_yaw);
+  // prev_x = car_x - cos(angle);
+  // prev_y = car_y - sin(angle);
+
+  pos_s = car_s;
+  ptss.push_back(pos_s);
+
+  // ptsx.push_back(prev_x);
+  ptsx.push_back(pos_x);
+  // ptsy.push_back(prev_y);
+  ptsy.push_back(pos_y);
+
+  vector<double> next_wp0 = getXY(pos_s+20,(ref_lane*4)+2,map_waypoints_s,map_waypoints_x,map_waypoints_y);
+  vector<double> next_wp1 = getXY(pos_s+40,(ref_lane*4)+2,map_waypoints_s,map_waypoints_x,map_waypoints_y);
+  vector<double> next_wp2 = getXY(pos_s+60,(ref_lane*4)+2,map_waypoints_s,map_waypoints_x,map_waypoints_y);
+
+  ptss.push_back(pos_s+20);
+  ptss.push_back(pos_s+40);
+  ptss.push_back(pos_s+60);
+
+  ptsx.push_back(next_wp0[0]);
+  ptsx.push_back(next_wp1[0]);
+  ptsx.push_back(next_wp2[0]);
+
+  ptsy.push_back(next_wp0[1]);
+  ptsy.push_back(next_wp1[1]);
+  ptsy.push_back(next_wp2[1]);
+
+  // create spline
+  tk::spline spx;
+  tk::spline spy;
+
+  //set (x,y) points to spline
+  spx.set_points(ptss,ptsx);
+  spy.set_points(ptss,ptsy);
+
+  planned_path.x.clear();
+  planned_path.y.clear();
+
+  //TODO: better way to change velocity Minimizing jerk
+  double ds = my_target_speed/120;
+  for(int si = 0; si < 50; si++)
+  {
+    planned_path.x.push_back(spx(pos_s+(ds*si)));
+    planned_path.y.push_back(spy(pos_s+(ds*si)));
+    //cout << si << ": " << planned_path.x[si] << ", " << planned_path.y[si] << endl;
   }
+
+}
+
+void Path::generate_trajectory(vector<double> previous_path_x, vector<double> previous_path_y){
 
   // 1. trajectory s
   JMT_PARAMS jmt_s;
   jmt_s.start.push_back(car_s);
-  jmt_s.start.push_back(car_speed);
+  jmt_s.start.push_back(car_speed*0.44704);
   jmt_s.start.push_back(0.0);
   jmt_s.end.push_back(my_target_s);
-  jmt_s.end.push_back(targetspeed_mps);
+  jmt_s.end.push_back(my_target_speed*0.44704);
   jmt_s.end.push_back(0.0);
   jmt_s.T = 1.0;
+
+  //vector<double> targetxy = getXY(target_SD.s, target_SD.d, map_waypoints_s, map_waypoints_x, map_waypoints_y);
+  vector<double> evaltimes;
+  for (int i=0; i<50; i++){
+    evaltimes.push_back(0.02*i); // each point is 20ms apart
+  }
 
   vector<double> jmt_coeffs_s = JMT(jmt_s.start, jmt_s.end, jmt_s.T);
   vector<double> path_s = polyvals(jmt_coeffs_s, evaltimes);

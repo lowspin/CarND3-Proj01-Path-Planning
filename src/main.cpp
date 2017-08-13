@@ -120,6 +120,7 @@ int main() {
 
           	// TODO: define a path made up of (x,y) points that the car will visit sequentially every .02 seconds
             path.updateLocalData(car_x,car_y,car_s,car_d,car_yaw,car_speed);
+            cout << car_x << ", " << car_y << endl;
 
             path.current_time = chrono::high_resolution_clock::now();
   					auto time_difference = chrono::duration_cast<std::chrono::milliseconds>(path.current_time - path.start_time).count();
@@ -142,8 +143,9 @@ int main() {
               path.behavior();
 
               // 3. Trajectory Generation
-              path.trajectory(previous_path_x, previous_path_y, end_path_s, end_path_d);
-              // path.generate_trajectory(previous_path_x, previous_path_y);
+              // path.trajectory(previous_path_x, previous_path_y, end_path_s, end_path_d);
+              path.gen_trajectory(previous_path_x, previous_path_y);
+              //path.generate_trajectory(previous_path_x, previous_path_y);
 
               for (int i=0; i<50; i++)
               {
