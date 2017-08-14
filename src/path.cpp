@@ -103,6 +103,7 @@ void Path::behavior() {
   double check_speed;
   double onecarlength = 4.0;
   bool too_close = false;
+  double closest_car_s;
 
   if (behavior_state == "KeepLane"){
 
@@ -111,7 +112,8 @@ void Path::behavior() {
     double check_s_future;
     double check_s_now;
     double vx,vy;
-    double closest_car_s=9999;
+
+    closest_car_s=9999;
 
     for (int i=0; i<traffic_future.size(); i++){
 
@@ -169,10 +171,15 @@ void Path::behavior() {
     else {
       speed_mph = my_target_speed + 5.0;
     }
-    speed_mph = (speed_mph<0)?0.0:speed_mph;
-    speed_mph = (speed_mph>max_speed)?max_speed:speed_mph;
   }
 
+  if (closest_car_s-car_s < 10){
+    targetlane = 0;
+    //speed_mph = my_target_speed + 5.0;
+  }
+
+  speed_mph = (speed_mph<0)?0.0:speed_mph;
+  speed_mph = (speed_mph>max_speed)?max_speed:speed_mph;
   plan_target_sd(targetlane, target_s, speed_mph);
 }
 
