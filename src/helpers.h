@@ -5,6 +5,9 @@
 #include <cmath>
 #include <vector>
 
+const double Mph2mps = 0.44704;
+const double mps2Mph = 2.23694;
+
 using namespace std;
 
 // For converting back and forth between radians and degrees.

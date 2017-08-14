@@ -31,7 +31,7 @@ void Path::init(vector<double> map_x,vector<double> map_y,vector<double> map_s,
   map_waypoints_dy = map_dy;
 
   max_s = max_track_s;
-  my_target_speed = 49.9; //0.0;
+  my_target_speed = 0.0;
 
   behavior_state = "KeepLane";
 
@@ -98,7 +98,7 @@ void Path::behavior() {
   }
 
   double max_speed = 49.9;
-  double speed_mph = max_speed; //my_target_speed;
+  double speed_mph = my_target_speed;
   double target_s = 50.0; //my_target_s;
   double check_speed;
   double onecarlength = 4.0;
@@ -109,31 +109,39 @@ void Path::behavior() {
 
     int check_lane;
     double check_s_future;
-    double check_s;
+    double check_s_now;
     double vx,vy;
+    double closest_car_s=9999;
 
     for (int i=0; i<traffic_future.size(); i++){
 
       check_lane = traffic_future[i][0];
-      check_s = traffic_now[i][5];
+      check_s_now = traffic_now[i][5];
       check_s_future = traffic_future[i][1];
 
-      if(check_lane == car_lane){
-        if( (check_s_future>car_s) && (check_s_future-car_s<(max_speed*0.44704)) ) {
-          //if( (check_s>car_s) && (check_s-car_s<60.0) ) {
+      if( (check_lane == car_lane)  &&  (check_s_now>car_s) && (check_s_now<closest_car_s) ){
+
+        closest_car_s = check_s_now;
+        cout << "closest car = " << closest_car_s-car_s << endl;
+
+        // if( (check_s_future-car_s<(my_target_speed*Mph2mps)) ) {
+        if( check_s_future-car_s<50.0 ) {
+
           too_close = true;
 
-          vx = traffic_now[i][3];
-          vy = traffic_now[i][4];
-          check_speed = sqrt(vx*vx+vy*vy);
+          target_s = check_s_future - (2.0*onecarlength);
+          target_s = (target_s<car_s)? car_s : target_s;
 
-          speed_mph = check_speed * 2.23694;
-          target_s = check_s - (1.0*onecarlength);
+          speed_mph = mps2Mph * (target_s - car_s) / 1.0; // in 1.0 sec
+
+          // vx = traffic_now[i][3];
+          // vy = traffic_now[i][4];
+          // check_speed = sqrt(vx*vx+vy*vy);
+          // speed_mph = check_speed * 2.23694;
         }
       }
     }
 
-  }
 
 /*
 
@@ -155,8 +163,14 @@ void Path::behavior() {
   double target_s = car_s + (1.0*speed_mph*0.44704); // 1.0 sec ahead
   */
 
-  if(too_close){
-    cout << "Too close! set speed=" << speed_mph << endl;
+    if(too_close){
+      cout << "Too close! set speed=" << speed_mph << endl;
+    }
+    else {
+      speed_mph = my_target_speed + 5.0;
+    }
+    speed_mph = (speed_mph<0)?0.0:speed_mph;
+    speed_mph = (speed_mph>max_speed)?max_speed:speed_mph;
   }
 
   plan_target_sd(targetlane, target_s, speed_mph);
@@ -333,7 +347,7 @@ void Path::gen_trajectory(vector<double> previous_path_x, vector<double> previou
   vector<double> ptsx;
   vector<double> ptsy;
 
-  cout << car_x << ", " << car_y << endl;
+  // cout << "traj: " << car_x << ", " << car_y << endl;
   pos_x = car_x;
   pos_y = car_y;
   // angle = deg2rad(car_yaw);
@@ -376,7 +390,10 @@ void Path::gen_trajectory(vector<double> previous_path_x, vector<double> previou
   planned_path.y.clear();
 
   //TODO: better way to change velocity Minimizing jerk
-  double ds = my_target_speed/120;
+  // double ds = my_target_speed/120;
+  double speed_mps = my_target_speed * Mph2mps; // 50 nodes in 1 sec
+  double ds = speed_mps * 1.0 / 50;
+
   for(int si = 0; si < 50; si++)
   {
     planned_path.x.push_back(spx(pos_s+(ds*si)));
