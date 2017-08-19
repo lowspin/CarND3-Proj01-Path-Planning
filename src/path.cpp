@@ -52,16 +52,19 @@ void Path::updateLocalData(double x,double y,double s,double d,double yaw,double
 }
 
 void Path::prediction(vector< vector<double>> sensor_fusion) {
-  double d, vx, vy, check_speed, check_s, check_s_future;
+  double d, vx, vy, check_speed, check_s_now, check_s_future;
   vector<double> car_future;
   double time_horizon_sec = 1.0;
   int lane;
+
 
   traffic_now.clear();
   traffic_future.clear();
 
   traffic_now = sensor_fusion;
 
+  double closest_car_s=9999.9;
+  car_ahead_dist = 9999.9;
   for (int i=0; i<traffic_now.size(); i++){
     d = traffic_now[i][6];
     lane = lane_from_d(d);
@@ -69,22 +72,32 @@ void Path::prediction(vector< vector<double>> sensor_fusion) {
     vx = traffic_now[i][3];
     vy = traffic_now[i][4];
     check_speed = sqrt(vx*vx+vy*vy);
-    check_s = traffic_now[i][5];
-    check_s_future = check_s + 1.0*check_speed;
+    check_s_now = traffic_now[i][5];
+    check_s_future = check_s_now + 1.0*check_speed; // 1 sec in future
 
     car_future.clear();
     car_future.push_back(lane);
     car_future.push_back(check_s_future);
-
     traffic_future.push_back(car_future);
-  }
+
+    // figure out which is the car ahead
+    if (lane == car_lane){
+      if ( (check_s_now>car_s) && (check_s_now<closest_car_s) ) {
+        if ((check_s_now - car_s)>0) {
+          closest_car_s = check_s_now;
+          car_ahead_dist = check_s_now - car_s;
+          car_ahead_speed = check_speed;
+        }
+      }
+    } // if (lane == car_lane)
+  } // for traffic_now.size()
 }
 
 void Path::plan_target_sd(int targetlane, double target_s, double speed_mph) {
   my_target_s = target_s;
   my_target_lane = targetlane;
   my_target_speed = speed_mph;
-  cout << "set lane=" << my_target_lane << ", speed=" << my_target_speed << ", s=" << my_target_s << endl;
+  cout << "current speed=" << car_speed << ". Set lane=" << my_target_lane << ", set speed=" << my_target_speed << ", s=" << my_target_s << endl;
 }
 
 void Path::behavior() {
@@ -98,8 +111,10 @@ void Path::behavior() {
   }
 
   double max_speed = 49.9;
+  double target_speed = 0.0;
   double speed_mph = my_target_speed;
   double target_s = 50.0; //my_target_s;
+
   double check_speed;
   double onecarlength = 4.0;
   bool too_close = false;
@@ -107,79 +122,94 @@ void Path::behavior() {
 
   if (behavior_state == "KeepLane"){
 
+    // int check_lane;
+    // double check_s_future;
+    // double check_s_now;
+    // double vx,vy;
+    //
+    // closest_car_s=9999;
+    // for (int i=0; i<traffic_future.size(); i++){
+    //
+    //   check_lane = traffic_future[i][0];
+    //   check_s_now = traffic_now[i][5];
+    //   check_s_future = traffic_future[i][1];
+    //
+    //   if( (check_lane == car_lane)  &&  (check_s_now>car_s) && (check_s_now<closest_car_s) ){
+    //
+    //     closest_car_s = check_s_now;
+    //     cout << "closest car = " << closest_car_s-car_s << endl;
+    //
+    //     // if( (check_s_future-car_s<(my_target_speed*Mph2mps)) ) {
+    //     if( check_s_future-car_s<50.0 ) {
+    //
+    //       too_close = true;
+    //
+    //       target_s = check_s_future - (2.0*onecarlength);
+    //       target_s = (target_s<car_s)? car_s : target_s;
+    //
+    //       target_speed = mps2Mph * (target_s - car_s) / 1.0; // in 1.0 sec
+    //       cout << "check target speed = " << target_speed << endl;
+    //
+    //       if (target_speed>car_speed) // speed up
+    //       {
+    //         if (car_speed < 5.0) // initial acceleration
+    //           speed_mph = car_speed + 2.0;
+    //         else
+    //           speed_mph = ( (target_speed-car_speed)>5.0 )? car_speed+5.0 : target_speed;
+    //       }
+    //       else // slow down
+    //       {
+    //         speed_mph = ( (car_speed-target_speed)>5.0 )? car_speed-5.0 : target_speed;
+    //       }
+    //
+    //       // vx = traffic_now[i][3];
+    //       // vy = traffic_now[i][4];
+    //       // check_speed = sqrt(vx*vx+vy*vy);
+    //       // speed_mph = check_speed * 2.23694;
+    //     }
+    //   }
+    // }
 
-    int check_lane;
-    double check_s_future;
-    double check_s_now;
-    double vx,vy;
+    if (car_ahead_dist<30.0) {
+      cout << "closest car = " << car_ahead_dist << endl;
+      too_close = true;
 
-    closest_car_s=9999;
-
-    for (int i=0; i<traffic_future.size(); i++){
-
-      check_lane = traffic_future[i][0];
-      check_s_now = traffic_now[i][5];
-      check_s_future = traffic_future[i][1];
-
-      if( (check_lane == car_lane)  &&  (check_s_now>car_s) && (check_s_now<closest_car_s) ){
-
-        closest_car_s = check_s_now;
-        cout << "closest car = " << closest_car_s-car_s << endl;
-
-        // if( (check_s_future-car_s<(my_target_speed*Mph2mps)) ) {
-        if( check_s_future-car_s<50.0 ) {
-
-          too_close = true;
-
-          target_s = check_s_future - (2.0*onecarlength);
-          target_s = (target_s<car_s)? car_s : target_s;
-
-          speed_mph = mps2Mph * (target_s - car_s) / 1.0; // in 1.0 sec
-
-          // vx = traffic_now[i][3];
-          // vy = traffic_now[i][4];
-          // check_speed = sqrt(vx*vx+vy*vy);
-          // speed_mph = check_speed * 2.23694;
-        }
+      speed_mph = car_ahead_speed * mps2Mph; // match speed of car ahead
+      if (car_ahead_dist<10.0) { // keep a safe following distance
+        speed_mph -= (car_speed>10.0)? 5.0 : 3.0;
       }
     }
-
-
-/*
-
-  // double speed_mph = 49.9;
-  double max_speed = 49.9;
-  double speed_mph = my_target_speed;
-  if (too_close){
-    speed_mph -= 5.0; // 5mph = 2.2352 m/s;
-  } else if (speed_mph<max_speed) {
-    //speed_mph += (speed_mph<10.0)? 1.0 : 5.0;
-    if (car_speed<3.0) speed_mph=car_speed+1.0;
-    else if (car_speed<20.0) speed_mph+=2.0; //=car_speed+2.0;
-    else if (car_speed<30.0) speed_mph+=3.0; //=car_speed+3.0;
-    else if (car_speed<40.0) speed_mph+=4.0; //=car_speed+4.0;
-    else speed_mph+=5.0;//=car_speed+5.0;
-  }
-  speed_mph = (speed_mph<0)?0.0:speed_mph;
-  speed_mph = (speed_mph>max_speed)?max_speed:speed_mph;
-  double target_s = car_s + (1.0*speed_mph*0.44704); // 1.0 sec ahead
-  */
-
-    if(too_close){
-      cout << "Too close! set speed=" << speed_mph << endl;
+    else
+    {
+      speed_mph += (car_speed<5.0)? 4.0 : 5.0;
     }
-    else {
-      speed_mph = my_target_speed + 5.0;
+    cout << "1) Target speed=" << speed_mph << ". " << endl;
+
+    // limit acceleration or deceleration
+    if(car_speed>0.0) {
+      speed_mph = ( (speed_mph-car_speed) > 5.0 )? car_speed+3.0 : speed_mph;
+      speed_mph = ( (speed_mph-car_speed) < -5.0 )? car_speed-3.0 : speed_mph;
     }
+    cout << "2) Target speed=" << speed_mph << ". " << endl;
+
+    // if(too_close){
+    //   cout << "Too close! Try target speed=" << speed_mph << ". ";
+    //   targetlane = 0;
+    //   cout << " Change to lane 0." << endl;
+    // }
+    // else {
+    //   speed_mph += (car_speed<5.0)? 2.0 : 5.0;
+    //   speed_mph = ( (speed_mph-car_speed) > 5.0 )? car_speed+5.0 : speed_mph;
+    // }
+    // cout << "2) Target speed=" << speed_mph << ". " << endl;
+
   }
 
-  if (closest_car_s-car_s < 10){
-    targetlane = 0;
-    //speed_mph = my_target_speed + 5.0;
-  }
+  speed_mph = (speed_mph<=0.0)? 1.0 : speed_mph; // speed cannot be zero
+  speed_mph = (speed_mph>max_speed)? max_speed : speed_mph;
 
-  speed_mph = (speed_mph<0)?0.0:speed_mph;
-  speed_mph = (speed_mph>max_speed)?max_speed:speed_mph;
+  cout << "3) Target speed=" << speed_mph << endl;
+
   plan_target_sd(targetlane, target_s, speed_mph);
 }
 
@@ -247,7 +277,7 @@ void Path::trajectory(vector<double> previous_path_x, vector<double> previous_pa
   double ref_vel = my_target_speed;
   double ref_lane = my_target_lane;
 
-  if( path_size<2 )
+  if( path_size<3 )
   {
       pos_x = car_x;
       pos_y = car_y;
@@ -274,9 +304,9 @@ void Path::trajectory(vector<double> previous_path_x, vector<double> previous_pa
   ptsy.push_back(prev_y);
   ptsy.push_back(pos_y);
 
-  vector<double> next_wp0 = getXY(pos_s+30,(ref_lane*4)+2,map_waypoints_s,map_waypoints_x,map_waypoints_y);
-  vector<double> next_wp1 = getXY(pos_s+60,(ref_lane*4)+2,map_waypoints_s,map_waypoints_x,map_waypoints_y);
-  vector<double> next_wp2 = getXY(pos_s+90,(ref_lane*4)+2,map_waypoints_s,map_waypoints_x,map_waypoints_y);
+  vector<double> next_wp0 = getXY(pos_s+20,(ref_lane*4)+2,map_waypoints_s,map_waypoints_x,map_waypoints_y);
+  vector<double> next_wp1 = getXY(pos_s+40,(ref_lane*4)+2,map_waypoints_s,map_waypoints_x,map_waypoints_y);
+  vector<double> next_wp2 = getXY(pos_s+60,(ref_lane*4)+2,map_waypoints_s,map_waypoints_x,map_waypoints_y);
 
   ptsx.push_back(next_wp0[0]);
   ptsx.push_back(next_wp1[0]);

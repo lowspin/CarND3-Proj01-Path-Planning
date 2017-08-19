@@ -76,6 +76,8 @@ public:
 	// Other cars location and speed
 	std::vector< std::vector<double>> traffic_future;
 	std::vector< std::vector<double>> traffic_now;
+	double car_ahead_dist;
+	double car_ahead_speed;
 
 	// Main car's target location and speed
 	double my_target_s;
