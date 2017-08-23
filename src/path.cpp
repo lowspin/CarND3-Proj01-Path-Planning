@@ -54,7 +54,7 @@ void Path::updateLocalData(double x,double y,double s,double d,double yaw,double
 	car_d = d;
   car_lane = lane_from_d(d);
 	car_yaw = yaw;
-	car_speed = speed;
+	car_speed = speed; // Miles per hour
 }
 
 void Path::prediction(vector< vector<double>> sensor_fusion) {
@@ -126,17 +126,17 @@ void Path::prediction(vector< vector<double>> sensor_fusion) {
 
     // watch out for fast cars behind
     if (obs_behind_dist[ln]<9999.9) {
-      if (obs_behind_dist[ln]/obs_behind_speed[ln]<0.6) { // dist/speed = time
+      if (obs_behind_dist[ln]/obs_behind_speed[ln]<0.5) { // dist/speed = time
         lanescore[ln] = -1.0; // behind car catches up within x secs.
       }
     }
   }
 
-  // cout << my_target_lane << ", lane scores: | ";
-  // for(int ln=0; ln<3; ln++){
-  //   cout << lanescore[ln] << " | ";
-  // }
-  // cout << endl;
+  cout << behavior_state << " " << car_lane << "->" << my_target_lane << ", scores: | ";
+  for(int ln=0; ln<3; ln++){
+    cout << lanescore[ln] << " | ";
+  }
+  cout << endl;
 
 }
 
@@ -144,7 +144,7 @@ void Path::behavior() {
   // purpose: decide target (s,d)
 
   int targetlane = car_lane; // {0,1,2}
-  double max_speed = 49.9;
+  double max_speed = 49.5;
   double target_speed = 0.0;
   double speed_mph = my_target_speed;
   double target_s = 50.0; //my_target_s;
@@ -154,7 +154,7 @@ void Path::behavior() {
   bool too_close = false;
   double closest_car_s;
 
-  if (behavior_state == "KeepLane"){
+  if (true) {//behavior_state == "KeepLane"){
 
     if (obs_ahead_dist[car_lane]<30.0) {
       // cout << "closest car = " << obs_ahead_dist[car_lane] << endl;
@@ -176,18 +176,18 @@ void Path::behavior() {
           else {
             double test0, test2;
             if (abs(lanescore[0]-lanescore[2])>2.0) { // space difference > 10m
-              cout << "MORE then 2.0m" << endl;
+              cout << "MORE then 2.0m, ";
               test0 = lanescore[0]-lanescore[2]; // use available space
             } else {
-              cout << "less then 2.0m" << endl;
+              cout << "less then 2.0m, ";
               test0 = obs_ahead_speed[0]-obs_ahead_speed[2]; // use speed difference
             }
             if(test0>=0.0) {
-              cout << "test >= 0" << endl;
+              cout << "lane 0 better than lane 2" << endl;
               targetlane = (lanescore[0]>lanescore[car_lane])? 0 : car_lane;
             }
             else {
-              cout << "test < 0" << endl;
+              cout << "lane 2 better than lane 0" << endl;
               targetlane = (lanescore[2]>lanescore[car_lane])? 2 : car_lane;
             }
           }
@@ -225,18 +225,18 @@ void Path::behavior() {
 
   // plan_target_sd(targetlane, target_s, speed_mph);
 
-  // if (behavior_state == "KeepLane"){
-  //   if (targetlane != car_lane) {
-  //     behavior_state = "LaneChange";
-  //   }
-  // }
-  // else if (behavior_state == "LaneChange"){
-  //   my_next_lane = my_target_lane;
-  //   double lanecenter = (4.0*my_next_lane) + 2.0;
-  //   if(abs(car_d-lanecenter)<1.0){ // within +/- 1.0m of target lane center
-  //     behavior_state = "KeepLane";
-  //   }
-  // }
+  if (behavior_state == "KeepLane"){
+    if (targetlane != car_lane) {
+      behavior_state = "LaneChange";
+    }
+  }
+  else if (behavior_state == "LaneChange"){
+    my_next_lane = my_target_lane;
+    double lanecenter = (4.0*my_next_lane) + 2.0;
+    if(abs(car_d-lanecenter)<1.0){ // within +/- 1.0m of target lane center
+      behavior_state = "KeepLane";
+    }
+  }
 
 }
 
@@ -306,7 +306,16 @@ void Path::trajectory(vector<double> previous_path_x, vector<double> previous_pa
   double ref_lane = my_target_lane;
   // double ref_lane = my_next_lane;
 
-  if( path_size<2 )
+  int prevpts; //path_size;
+  if (behavior_state == "LaneChange"){
+    prevpts = 30;
+  }else{
+    prevpts = 40; //path_size;
+  }
+  prevpts = (path_size<prevpts)?path_size:prevpts;
+
+  // if( path_size<2 )
+  if( prevpts<2 )
   {
     pos_x = car_x;
     pos_y = car_y;
@@ -322,14 +331,15 @@ void Path::trajectory(vector<double> previous_path_x, vector<double> previous_pa
   }
   else
   {
-    int endindex;
-    endindex = 1;
-    // endindex = (my_target_lane==car_lane)? 1 : 6;
+    // pos_x = previous_path_x[path_size-endindex];
+    // pos_y = previous_path_y[path_size-endindex];
+    // prev_x = previous_path_x[path_size-endindex-1];
+    // prev_y = previous_path_y[path_size-endindex-1];
+    pos_x = previous_path_x[prevpts-1];
+    pos_y = previous_path_y[prevpts-1];
+    prev_x = previous_path_x[prevpts-2];
+    prev_y = previous_path_y[prevpts-2];
 
-    pos_x = previous_path_x[path_size-endindex];
-    pos_y = previous_path_y[path_size-endindex];
-    prev_x = previous_path_x[path_size-endindex-1];
-    prev_y = previous_path_y[path_size-endindex-1];
     angle = atan2(pos_y-prev_y, pos_x-prev_x);
 
     vec_sd = getFrenet(pos_x, pos_y, angle, map_waypoints_x, map_waypoints_y);
@@ -343,9 +353,18 @@ void Path::trajectory(vector<double> previous_path_x, vector<double> previous_pa
   ptsy.push_back(prev_y);
   ptsy.push_back(pos_y);
 
-  vector<double> next_wp0 = getXY(pos_s+30,(ref_lane*4)+2,map_waypoints_s,map_waypoints_x,map_waypoints_y);
-  vector<double> next_wp1 = getXY(pos_s+60,(ref_lane*4)+2,map_waypoints_s,map_waypoints_x,map_waypoints_y);
-  vector<double> next_wp2 = getXY(pos_s+90,(ref_lane*4)+2,map_waypoints_s,map_waypoints_x,map_waypoints_y);
+  vector<double> next_wp0;
+  vector<double> next_wp1;
+  vector<double> next_wp2;
+  if (car_speed > 30.0) {
+    next_wp0 = getXY(pos_s+40,(ref_lane*4)+2,map_waypoints_s,map_waypoints_x,map_waypoints_y);
+    next_wp1 = getXY(pos_s+65,(ref_lane*4)+2,map_waypoints_s,map_waypoints_x,map_waypoints_y);
+    next_wp2 = getXY(pos_s+90,(ref_lane*4)+2,map_waypoints_s,map_waypoints_x,map_waypoints_y);
+  } else {
+    next_wp0 = getXY(pos_s+30,(ref_lane*4)+2,map_waypoints_s,map_waypoints_x,map_waypoints_y);
+    next_wp1 = getXY(pos_s+60,(ref_lane*4)+2,map_waypoints_s,map_waypoints_x,map_waypoints_y);
+    next_wp2 = getXY(pos_s+90,(ref_lane*4)+2,map_waypoints_s,map_waypoints_x,map_waypoints_y);
+  }
 
   ptsx.push_back(next_wp0[0]);
   ptsx.push_back(next_wp1[0]);
@@ -373,46 +392,77 @@ void Path::trajectory(vector<double> previous_path_x, vector<double> previous_pa
   planned_path.x.clear();
   planned_path.y.clear();
 
-  for(int i = 0; i < path_size; i++)
+  // for(int i = 0; i < path_size; i++)
+  for(int i = 0; i < prevpts; i++)
   {
     planned_path.x.push_back(previous_path_x[i]);
     planned_path.y.push_back(previous_path_y[i]);
   }
 
   // break up spline points to match velocity
-  double target_x = 30.0; //30.0;
+  double target_x = 30.0; //30.0; - 0.05*pos_y
   double target_y = s(target_x);
   double target_dist = sqrt( (target_x*target_x) + (target_y*target_y));
 
   double x_add_on = 0.0;
+  double x_point = 0.0;
+  double y_point = 0.0;
 
-  for (int i=1; i<=50-path_size; i++)
+  // prev_x = (path_size>0) ? previous_path_x[path_size-1] : 0.0;
+  // prev_y = (path_size>0) ? previous_path_y[path_size-1] : 0.0;
+  prev_x = (path_size>0) ? previous_path_x[prevpts-1] : 0.0;
+  prev_y = (path_size>0) ? previous_path_y[prevpts-1] : 0.0;
+  double prev_dist = -1.0;
+  double curr_dist = -1.0;
+
+  // for (int i=1; i<=50-path_size; i++)
+  for (int i=1; i<=50-prevpts; i++)
   {
     double N = (target_dist/(.02*ref_vel/mps2Mph));
-    double x_point = x_add_on + (target_x/N);
-    double y_point = s(x_point);
+
+    x_point = x_add_on + (target_x/N);
+    y_point = s(x_point);
 
     x_add_on = x_point;
 
+    // rotate back to normal
     double x_ref = x_point;
     double y_ref = y_point;
 
-    // rotate back to normal
     x_point = x_ref*cos(angle) - y_ref*sin(angle);
     y_point = x_ref*sin(angle) + y_ref*cos(angle);
 
     x_point += pos_x;
     y_point += pos_y;
 
+    //--- adjust downwards if exceed speed limit - each intervale should be max 50*0.02*mps2Mph = 0.447 meters
+    // // cout << i << ": (" << prev_x << " " << prev_y << ") -> (" << x_point << " " << y_point << "): " << distance(prev_x,prev_y,x_point,y_point)*mps2Mph/0.02 << endl;
+    // if (distance(prev_x,prev_y,x_point,y_point)<10.) { //((prev_x!=0.0) && (prev_y!=0.0)){
+    //   //cout << distance(prev_x,prev_y,x_point,y_point)*mps2Mph/0.02 << endl;
+    //   while (distance(prev_x,prev_y,x_point,y_point)>49.9*0.02*Mph2mps) {
+    //     // cout << "adjust " << i << ": (" << prev_x << " " << prev_y << ") -> (" << x_point << " " << y_point << "): " << distance(prev_x,prev_y,x_point,y_point)*mps2Mph/0.02;
+    //     x_point -= 0.01*cos(angle); // 50*0.02*mps2Mph = 0.447 meters
+    //     y_point -= 0.01*sin(angle);
+    //     // cout << " -> " << distance(prev_x,prev_y,x_point,y_point)*mps2Mph/0.02 << endl;
+    //   }
+    // }
+
+    prev_x = x_point;
+    prev_y = y_point;
+    //--- end adjustment
+
     planned_path.x.push_back(x_point);
     planned_path.y.push_back(y_point);
+
   }
 
+  // check:
   double curr_speed = -1;
   double prev_speed = -1;
   double accel = -1;
   double max_speed = -1;
   double max_accel = -1;
+  double max_dist = -1;
   double dist1, dist2;
   for (int i=2; i<50; i++)
   {
@@ -427,7 +477,24 @@ void Path::trajectory(vector<double> previous_path_x, vector<double> previous_pa
       max_accel = accel;
     // cout << i << ": " << dist << endl;
   }
-  cout << "max_speed = " << max_speed << ", max_accel = " << max_accel << endl;
+
+  int max_speed_i = 0;
+  for (int i=1; i<50; i++)
+  {
+    dist1 = distance(planned_path.x[i-1],planned_path.y[i-1],planned_path.x[i],planned_path.y[i]);
+    if (dist1>max_dist){
+      max_dist = dist1;
+      max_speed_i = i;
+    }
+  }
+  if (max_dist*mps2Mph/0.02>50.0)
+    cout << max_speed_i << ": max_dist = " << max_dist << ", speed = " << mps2Mph*max_dist/0.02 << endl;
+
+//  cout << "max_speed = " << max_speed*2.23694 << "MPH, max_accel = " << max_accel << endl;
+  // if (max_speed*mps2Mph > 50.0)
+  //   cout << "max_speed = " << max_speed*mps2Mph << endl;
+  // if (max_accel > 10.0)
+  //   cout << "max_accel = " << max_accel << endl;
 }
 
 void Path::generate_trajectory(vector<double> previous_path_x, vector<double> previous_path_y){
