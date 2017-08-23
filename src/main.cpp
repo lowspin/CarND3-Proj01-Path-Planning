@@ -144,8 +144,7 @@ int main() {
 
               // 3. Trajectory Generation
               path.trajectory(previous_path_x, previous_path_y, end_path_s, end_path_d);
-              // path.gen_trajectory(previous_path_x, previous_path_y);
-              //path.generate_trajectory(previous_path_x, previous_path_y);
+              // path.generate_trajectory(previous_path_x, previous_path_y);
 
               for (int i=0; i<50; i++)
               {
