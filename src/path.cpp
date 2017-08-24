@@ -23,7 +23,7 @@ void Path::init(vector<double> map_x,vector<double> map_y,vector<double> map_s,
   map_waypoints_s = map_s;
   map_waypoints_dx = map_dx;
   map_waypoints_dy = map_dy;
-
+  
   max_s = max_track_s;
   my_target_speed = 0.0;
 
@@ -217,7 +217,7 @@ void Path::behavior() {
       }
 
       // Final Hard limits
-      speed_mph = (speed_mph<=0.0)? 1.0 : speed_mph; // speed cannot be zero
+      speed_mph = (speed_mph<=0.0)? 0.0 : speed_mph; // speed cannot be zero
       speed_mph = (speed_mph>speed_limit)? speed_limit : speed_mph;
 
       my_target_s = car_s + speed_mph*Mph2mps*1.0; // 1 sec later
@@ -228,13 +228,27 @@ void Path::behavior() {
       /* -------------------------------------------------------------*/
 
     case 	PREP_LANE_CHANGE_LEFT:
-      behavior_state = LANE_CHANGE_LEFT;
+    case 	PREP_LANE_CHANGE_RIGHT:
+
+      if (obs_behind_dist[my_target_lane]>1.0*onecarlength) { // safe to pass
+        behavior_state = LANE_CHANGE_LEFT;
+      } else {
+        // Still wanna switch lane?
+        targetlane = whichLane();
+        if(targetlane == car_lane){
+          behavior_state = KEEP_LANE;
+        } else {
+          if(targetlane != my_target_lane){
+            behavior_state = (targetlane<car_lane)? PREP_LANE_CHANGE_LEFT : PREP_LANE_CHANGE_RIGHT;
+          }
+        }
+      }
       break;
       /* -------------------------------------------------------------*/
 
-    case 	PREP_LANE_CHANGE_RIGHT:
-      behavior_state = LANE_CHANGE_RIGHT;
-      break;
+    // case 	PREP_LANE_CHANGE_RIGHT:
+    //   behavior_state = LANE_CHANGE_RIGHT;
+    //   break;
       /* -------------------------------------------------------------*/
 
     case LANE_CHANGE_LEFT:
