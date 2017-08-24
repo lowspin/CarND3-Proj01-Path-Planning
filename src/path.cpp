@@ -6,16 +6,11 @@
 #include <iostream>
 #include <thread>
 #include <vector>
-#include "Eigen-3.3/Eigen/Core"
-#include "Eigen-3.3/Eigen/QR"
-#include "Eigen-3.3/Eigen/Dense"
 #include "json.hpp"
 #include "spline.h"
 #include "helpers.h"
 
 using namespace std;
-using Eigen::MatrixXd;
-using Eigen::VectorXd;
 
 Path::Path(){}
 Path::~Path(){}
@@ -43,6 +38,7 @@ void Path::init(vector<double> map_x,vector<double> map_y,vector<double> map_s,
   behavior_state = "KeepLane";
   my_next_lane = 1;
   my_target_lane = 1;
+  speed_limit = 49.7;
 
   start_time = chrono::high_resolution_clock::now();
 }
@@ -140,11 +136,46 @@ void Path::prediction(vector< vector<double>> sensor_fusion) {
 
 }
 
+int Path::whichLane() {
+  int targetlane = car_lane;
+
+  switch (car_lane) {
+    case 0:
+      targetlane = (lanescore[1]>lanescore[car_lane])? 1 : car_lane;
+      break;
+    case 1:
+      if((lanescore[0]<0.0)&&(lanescore[2]<0.0))
+        targetlane = car_lane;
+      else {
+        double test0, test2;
+        if (abs(lanescore[0]-lanescore[2])>2.0) { // space difference > 10m
+          cout << "MORE then 2.0m, ";
+          test0 = lanescore[0]-lanescore[2]; // use available space
+        } else {
+          cout << "less then 2.0m, ";
+          test0 = obs_ahead_speed[0]-obs_ahead_speed[2]; // use speed difference
+        }
+        if(test0>=0.0) {
+          cout << "lane 0 better than lane 2" << endl;
+          targetlane = (lanescore[0]>lanescore[car_lane])? 0 : car_lane;
+        }
+        else {
+          cout << "lane 2 better than lane 0" << endl;
+          targetlane = (lanescore[2]>lanescore[car_lane])? 2 : car_lane;
+        }
+      }
+      break;
+    case 2:
+      targetlane = (lanescore[1]>lanescore[car_lane])? 1 : car_lane;
+      break;
+  }
+  return targetlane;
+}
+
 void Path::behavior() {
   // purpose: decide target (s,d)
 
   int targetlane = car_lane; // {0,1,2}
-  double max_speed = 49.5;
   double target_speed = 0.0;
   double speed_mph = my_target_speed;
   double target_s = 50.0; //my_target_s;
@@ -166,64 +197,27 @@ void Path::behavior() {
       }
 
       // Shall we switch lane?
-      switch (car_lane) {
-        case 0:
-          targetlane = (lanescore[1]>lanescore[car_lane])? 1 : car_lane;
-          break;
-        case 1:
-          if((lanescore[0]<0.0)&&(lanescore[2]<0.0))
-            targetlane = car_lane;
-          else {
-            double test0, test2;
-            if (abs(lanescore[0]-lanescore[2])>2.0) { // space difference > 10m
-              cout << "MORE then 2.0m, ";
-              test0 = lanescore[0]-lanescore[2]; // use available space
-            } else {
-              cout << "less then 2.0m, ";
-              test0 = obs_ahead_speed[0]-obs_ahead_speed[2]; // use speed difference
-            }
-            if(test0>=0.0) {
-              cout << "lane 0 better than lane 2" << endl;
-              targetlane = (lanescore[0]>lanescore[car_lane])? 0 : car_lane;
-            }
-            else {
-              cout << "lane 2 better than lane 0" << endl;
-              targetlane = (lanescore[2]>lanescore[car_lane])? 2 : car_lane;
-            }
-          }
-          break;
-        case 2:
-          targetlane = (lanescore[1]>lanescore[car_lane])? 1 : car_lane;
-          break;
-      }
-
+      targetlane = whichLane();
     }
     else
     {
       speed_mph += (car_speed<5.0)? 4.0 : 5.0;
     }
-    // cout << "1) Target speed=" << speed_mph << ". " << endl;
 
     // limit acceleration or deceleration
     if(car_speed>0.0) {
       speed_mph = ( (speed_mph-car_speed) > 5.0 )? car_speed+3.0 : speed_mph;
       speed_mph = ( (speed_mph-car_speed) < -5.0 )? car_speed-3.0 : speed_mph;
     }
-    // cout << "2) Target speed=" << speed_mph << ". " << endl;
 
   } // if (behavior_state == "KeepLane")
 
   speed_mph = (speed_mph<=0.0)? 1.0 : speed_mph; // speed cannot be zero
-  speed_mph = (speed_mph>max_speed)? max_speed : speed_mph;
-
-  // cout << "3) Target speed=" << speed_mph << endl;
+  speed_mph = (speed_mph>speed_limit)? speed_limit : speed_mph;
 
   my_target_s = car_s + speed_mph*Mph2mps*1.0; // 1 sec later
   my_target_lane = targetlane;
   my_target_speed = speed_mph;
-  // cout << "current speed=" << car_speed << ". Set lane=" << my_target_lane << ", set speed=" << my_target_speed << ", s=" << my_target_s << endl;
-
-  // plan_target_sd(targetlane, target_s, speed_mph);
 
   if (behavior_state == "KeepLane"){
     if (targetlane != car_lane) {
@@ -233,60 +227,11 @@ void Path::behavior() {
   else if (behavior_state == "LaneChange"){
     my_next_lane = my_target_lane;
     double lanecenter = (4.0*my_next_lane) + 2.0;
-    if(abs(car_d-lanecenter)<1.0){ // within +/- 1.0m of target lane center
+    if(abs(car_d-lanecenter)<0.6){ // within +/- 1.0m of target lane center
       behavior_state = "KeepLane";
     }
   }
 
-}
-
-// Jerk Minimizing Trajectory
-vector<double> Path::JMT(vector< double> start, vector <double> end, double T){
-  /*
-  Calculate the Jerk Minimizing Trajectory that connects the initial state
-  to the final state in time T.
-
-  INPUTS
-
-  start - the vehicles start location given as a length three array
-      corresponding to initial values of [s, s_dot, s_double_dot]
-
-  end   - the desired end state for vehicle. Like "start" this is a
-      length three array.
-
-  T     - The duration, in seconds, over which this maneuver should occur.
-
-  OUTPUT
-  an array of length 6, each value corresponding to a coefficent in the polynomial
-  s(t) = a_0 + a_1 * t + a_2 * t**2 + a_3 * t**3 + a_4 * t**4 + a_5 * t**5
-
-  EXAMPLE
-
-  > JMT( [0, 10, 0], [10, 10, 0], 1)
-  [0.0, 10.0, 0.0, 0.0, 0.0, 0.0]
-  */
-
-  MatrixXd A = MatrixXd(3, 3);
-  A << T*T*T, T*T*T*T, T*T*T*T*T,
-        3*T*T, 4*T*T*T,5*T*T*T*T,
-        6*T, 12*T*T, 20*T*T*T;
-
-  MatrixXd B = MatrixXd(3,1);
-  B << end[0]-(start[0]+start[1]*T+.5*start[2]*T*T),
-        end[1]-(start[1]+start[2]*T),
-        end[2]-start[2];
-
-  MatrixXd Ai = A.inverse();
-
-  MatrixXd C = Ai*B;
-
-  vector <double> result = {start[0], start[1], .5*start[2]};
-  for(int i = 0; i < C.size(); i++)
-  {
-      result.push_back(C.data()[i]);
-  }
-
-  return result;
 }
 
 void Path::trajectory(vector<double> previous_path_x, vector<double> previous_path_y, double end_path_s, double end_path_d){
@@ -307,8 +252,8 @@ void Path::trajectory(vector<double> previous_path_x, vector<double> previous_pa
   // double ref_lane = my_next_lane;
 
   int prevpts; //path_size;
-  if (behavior_state == "LaneChange"){
-    prevpts = 30;
+  if ((behavior_state == "LaneChange") || (my_target_speed<car_speed)){
+    prevpts = 25;
   }else{
     prevpts = 40; //path_size;
   }
@@ -356,13 +301,14 @@ void Path::trajectory(vector<double> previous_path_x, vector<double> previous_pa
   vector<double> next_wp0;
   vector<double> next_wp1;
   vector<double> next_wp2;
-  if (car_speed > 30.0) {
-    next_wp0 = getXY(pos_s+40,(ref_lane*4)+2,map_waypoints_s,map_waypoints_x,map_waypoints_y);
-    next_wp1 = getXY(pos_s+65,(ref_lane*4)+2,map_waypoints_s,map_waypoints_x,map_waypoints_y);
+  //if (car_speed > 30.0) {
+  if (behavior_state == "LaneChange"){
+    next_wp0 = getXY(pos_s+30,(ref_lane*4)+2,map_waypoints_s,map_waypoints_x,map_waypoints_y);
+    next_wp1 = getXY(pos_s+60,(ref_lane*4)+2,map_waypoints_s,map_waypoints_x,map_waypoints_y);
     next_wp2 = getXY(pos_s+90,(ref_lane*4)+2,map_waypoints_s,map_waypoints_x,map_waypoints_y);
   } else {
     next_wp0 = getXY(pos_s+30,(ref_lane*4)+2,map_waypoints_s,map_waypoints_x,map_waypoints_y);
-    next_wp1 = getXY(pos_s+60,(ref_lane*4)+2,map_waypoints_s,map_waypoints_x,map_waypoints_y);
+    next_wp1 = getXY(pos_s+75,(ref_lane*4)+2,map_waypoints_s,map_waypoints_x,map_waypoints_y);
     next_wp2 = getXY(pos_s+90,(ref_lane*4)+2,map_waypoints_s,map_waypoints_x,map_waypoints_y);
   }
 
@@ -456,131 +402,4 @@ void Path::trajectory(vector<double> previous_path_x, vector<double> previous_pa
 
   }
 
-  // check:
-  double curr_speed = -1;
-  double prev_speed = -1;
-  double accel = -1;
-  double max_speed = -1;
-  double max_accel = -1;
-  double max_dist = -1;
-  double dist1, dist2;
-  for (int i=2; i<50; i++)
-  {
-    dist1 = distance(planned_path.x[i-1],planned_path.y[i-1],planned_path.x[i],planned_path.y[i]);
-    dist2 = distance(planned_path.x[i-2],planned_path.y[i-2],planned_path.x[i-1],planned_path.y[i-1]);
-    prev_speed = dist1/0.02;
-    curr_speed = dist2/0.02;
-    accel = (curr_speed - prev_speed) / 0.02;
-    if (curr_speed>max_speed)
-      max_speed = curr_speed;
-    if (accel > max_accel)
-      max_accel = accel;
-    // cout << i << ": " << dist << endl;
-  }
-
-  int max_speed_i = 0;
-  for (int i=1; i<50; i++)
-  {
-    dist1 = distance(planned_path.x[i-1],planned_path.y[i-1],planned_path.x[i],planned_path.y[i]);
-    if (dist1>max_dist){
-      max_dist = dist1;
-      max_speed_i = i;
-    }
-  }
-  if (max_dist*mps2Mph/0.02>50.0)
-    cout << max_speed_i << ": max_dist = " << max_dist << ", speed = " << mps2Mph*max_dist/0.02 << endl;
-
-//  cout << "max_speed = " << max_speed*2.23694 << "MPH, max_accel = " << max_accel << endl;
-  // if (max_speed*mps2Mph > 50.0)
-  //   cout << "max_speed = " << max_speed*mps2Mph << endl;
-  // if (max_accel > 10.0)
-  //   cout << "max_accel = " << max_accel << endl;
-}
-
-void Path::generate_trajectory(vector<double> previous_path_x, vector<double> previous_path_y){
-  double pos_x;
-  double pos_y;
-  double pos_s;
-  double angle;
-  double prev_x;
-  double prev_y;
-  double _s, _sdot;
-  vector<double> vec_sd;
-
-  int path_size = previous_path_x.size();
-
-  if( path_size<2 )
-  {
-    _s = car_s;
-    _sdot = car_speed;
-  }
-  else
-  {
-    int endindex;
-    endindex = 1;
-    // endindex = (my_target_lane==car_lane)? 1 : 6;
-
-    pos_x = previous_path_x[1];
-    pos_y = previous_path_y[1];
-    prev_x = previous_path_x[0];
-    prev_y = previous_path_y[0];
-    angle = atan2(pos_y-prev_y, pos_x-prev_x);
-
-    vec_sd = getFrenet(pos_x, pos_y, angle, map_waypoints_x, map_waypoints_y);
-    _s = vec_sd[0];
-    _sdot = distance(prev_x,prev_y,pos_x,pos_y) / 0.02;
-    //pos_s = end_path_s;
-  }
-  cout << path_size << ": " << _s << ", " << _sdot << ", " << car_d << " --> " << my_target_s << ", " << my_target_speed << ", " << my_target_lane << endl;
-
-  // 1. trajectory s
-  JMT_PARAMS jmt_s;
-  jmt_s.start.push_back(_s); //(car_s);
-  jmt_s.start.push_back(_sdot); //(car_speed*Mph2mps);
-  jmt_s.start.push_back(0.0);
-  jmt_s.end.push_back(my_target_s);
-  jmt_s.end.push_back(my_target_speed*Mph2mps);
-  jmt_s.end.push_back(0.0);
-  jmt_s.T = 1.0;
-
-  //vector<double> targetxy = getXY(target_SD.s, target_SD.d, map_waypoints_s, map_waypoints_x, map_waypoints_y);
-  vector<double> evaltimes;
-  for (int i=0; i<50; i++){
-    evaltimes.push_back(0.02*i); // each point is 20ms apart
-  }
-
-  vector<double> jmt_coeffs_s = JMT(jmt_s.start, jmt_s.end, jmt_s.T);
-  vector<double> path_s = polyvals(jmt_coeffs_s, evaltimes);
-
-  // 2. trajectory d
-  JMT_PARAMS jmt_d;
-  jmt_d.start.push_back(car_d);
-  jmt_d.start.push_back(0.0);
-  jmt_d.start.push_back(0.0);
-  jmt_d.end.push_back((my_target_lane*4.0)+2.0);
-  jmt_d.end.push_back(0.0);
-  jmt_d.end.push_back(0.0);
-  jmt_d.T = 1.0;
-
-  vector<double> jmt_coeffs_d = JMT(jmt_d.start, jmt_d.end, jmt_d.T);
-  vector<double> path_d = polyvals(jmt_coeffs_d, evaltimes);
-
-  planned_path.x.clear();
-  planned_path.y.clear();
-
-  if (1) //(previous_path_x.size()>0)
-  {
-    for (int i=0; i<50; i++){
-      vector<double> pathxy = getXY(path_s[i],path_d[i],map_waypoints_s, map_waypoints_x, map_waypoints_y);
-      planned_path.x.push_back(pathxy[0]);
-      planned_path.y.push_back(pathxy[1]);
-    }
-  }
-  else // initial state
-  {
-    // for (int i=0; i<50; i++){
-    //   planned_path.x.push_back(waypoints_upsampled.x[i]);
-    //   planned_path.y.push_back(waypoints_upsampled.y[i]);
-    // }
-  }
 }

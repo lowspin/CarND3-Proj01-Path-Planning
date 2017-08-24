@@ -65,7 +65,9 @@ public:
 
 	//Planned Path;
 	Path_XY planned_path;
-	// Point_SD target_SD;
+
+	// Speed Limit
+	double speed_limit;
 
 	// Main car's localization Data
 	double car_x;
@@ -98,19 +100,11 @@ public:
 
 	void updateLocalData(double x,double y,double s,double d,double yaw,double speed);
 
+	int whichLane();
+
 	void prediction(std::vector< std::vector<double>> sensor_fusion);
-
 	void behavior();
-
-	// void Upsample_Waypoints(
-	// 	std::vector<double> map_waypoints_x,std::vector<double> map_waypoints_y,
-	// 	std::vector<double> map_waypoints_s, double max_s);
-
-	// Jerk Minimizing Trajectory
-	std::vector<double> JMT(std::vector< double> start, std::vector <double> end, double T);
-
 	void trajectory(std::vector<double> previous_path_x, std::vector<double> previous_path_y, double end_path_s, double end_path_d);
-	void generate_trajectory(std::vector<double> previous_path_x, std::vector<double> previous_path_y);
 
 };
 

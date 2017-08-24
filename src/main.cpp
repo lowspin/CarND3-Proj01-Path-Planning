@@ -157,38 +157,6 @@ int main() {
               msgJson["next_x"] = next_x_vals;
               msgJson["next_y"] = next_y_vals;
 
-              // msgJson["previous_path_x"] = next_x_vals;
-              // msgJson["previous_path_y"] = next_y_vals;
-              //
-              // msgJson["end_path_s"] = path.target_SD.s;
-              // msgJson["end_path_d"] = path.target_SD.d;
-/*
-  						// 1. Merge previous path and update car state
-  						auto Previous_path = path.merge_previous_path(MAP, previous_path_x,
-  							previous_path_y, car_yaw, car_s, car_d, end_path_s, end_path_d);
-
-  						// 2. Update vehicles with sensor fusion readings
-  						path.prediction(sensor_fusion);
-
-  						// 3. Update our car's state (pending removal of arguments here as doing update at 1. now.0
-  						path.behavior_update_state(MAP, car_x, car_y, Previous_path.s, Previous_path.d, car_yaw, car_speed);
-
-  						// 4. Generate trajectory
-  						auto trajectory = path.generate_trajectory();
-
-  						// 5. Build trajectory using time
-  						auto S_D_ = path.build_trajectory(trajectory);
-
-  						// 6. Convert to X and Y and append previous path
-  						X_Y_ = path.convert_new_path_to_X_Y_and_merge(MAP, S_D_, Previous_path);
-
-
-  						//cout << X_Y_.X.size() << endl;
-
-  						msgJson["next_x"] = X_Y_.X;
-  						msgJson["next_y"] = X_Y_.Y;
-*/
-
   					}
 
             else
