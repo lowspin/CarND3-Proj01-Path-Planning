@@ -38,12 +38,19 @@ struct Path_XY {
 // };
 
 // for boundary conditions and time for JMT
-struct JMT_PARAMS {
-	std::vector<double> start;
-	std::vector<double> end;
-	double T;
-};
+// struct JMT_PARAMS {
+// 	std::vector<double> start;
+// 	std::vector<double> end;
+// 	double T;
+// };
 
+enum BehaviorState {
+	KEEP_LANE,
+	PREP_LANE_CHANGE_LEFT,
+	LANE_CHANGE_LEFT,
+	PREP_LANE_CHANGE_RIGHT,
+	LANE_CHANGE_RIGHT
+ };
 
 class Path {
 public:
@@ -93,7 +100,8 @@ public:
 	double my_target_speed;
 
 	// Behabior planning state
-	std::string behavior_state;
+	// std::string behavior_state;
+	BehaviorState behavior_state;
 
 	void init(std::vector<double>map_x, std::vector<double>map_y,
 		std::vector<double>map_s, std::vector<double>map_dx, std::vector<double>map_dy, double max_track_s);

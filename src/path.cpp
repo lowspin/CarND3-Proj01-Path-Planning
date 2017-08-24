@@ -35,7 +35,7 @@ void Path::init(vector<double> map_x,vector<double> map_y,vector<double> map_s,
   	obs_behind_speed[ln] = -1.0;
   }
 
-  behavior_state = "KeepLane";
+  behavior_state = KEEP_LANE;
   my_next_lane = 1;
   my_target_lane = 1;
   speed_limit = 49.7;
@@ -185,53 +185,71 @@ void Path::behavior() {
   bool too_close = false;
   double closest_car_s;
 
-  if (true) {//behavior_state == "KeepLane"){
+  switch (behavior_state) {
 
-    if (obs_ahead_dist[car_lane]<30.0) {
-      // cout << "closest car = " << obs_ahead_dist[car_lane] << endl;
-      too_close = true;
+    case KEEP_LANE:
 
-      speed_mph = obs_ahead_speed[car_lane] * mps2Mph; // match speed of car ahead
-      if (obs_ahead_dist[car_lane]<10.0) { // keep a safe following distance
-        speed_mph -= (car_speed>10.0)? 5.0 : 3.0;
+      if (obs_ahead_dist[car_lane]<30.0) {
+        // cout << "closest car = " << obs_ahead_dist[car_lane] << endl;
+        too_close = true;
+
+        speed_mph = obs_ahead_speed[car_lane] * mps2Mph; // match speed of car ahead
+        if (obs_ahead_dist[car_lane]<10.0) { // keep a safe following distance
+          speed_mph -= (car_speed>10.0)? 5.0 : 3.0;
+        }
+
+        // Shall we switch lane?
+        targetlane = whichLane();
+      }
+      else
+      {
+        speed_mph += (car_speed<5.0)? 4.0 : 5.0;
       }
 
-      // Shall we switch lane?
-      targetlane = whichLane();
-    }
-    else
-    {
-      speed_mph += (car_speed<5.0)? 4.0 : 5.0;
-    }
+      // limit acceleration or deceleration
+      if(car_speed>0.0) {
+        speed_mph = ( (speed_mph-car_speed) > 5.0 )? car_speed+3.0 : speed_mph;
+        speed_mph = ( (speed_mph-car_speed) < -5.0 )? car_speed-3.0 : speed_mph;
+      }
 
-    // limit acceleration or deceleration
-    if(car_speed>0.0) {
-      speed_mph = ( (speed_mph-car_speed) > 5.0 )? car_speed+3.0 : speed_mph;
-      speed_mph = ( (speed_mph-car_speed) < -5.0 )? car_speed-3.0 : speed_mph;
-    }
+      if (targetlane != car_lane) {
+        behavior_state = (targetlane<car_lane)? PREP_LANE_CHANGE_LEFT : PREP_LANE_CHANGE_RIGHT;
+      }
 
-  } // if (behavior_state == "KeepLane")
+      // Final Hard limits
+      speed_mph = (speed_mph<=0.0)? 1.0 : speed_mph; // speed cannot be zero
+      speed_mph = (speed_mph>speed_limit)? speed_limit : speed_mph;
 
-  speed_mph = (speed_mph<=0.0)? 1.0 : speed_mph; // speed cannot be zero
-  speed_mph = (speed_mph>speed_limit)? speed_limit : speed_mph;
+      my_target_s = car_s + speed_mph*Mph2mps*1.0; // 1 sec later
+      my_target_lane = targetlane;
+      my_target_speed = speed_mph;
 
-  my_target_s = car_s + speed_mph*Mph2mps*1.0; // 1 sec later
-  my_target_lane = targetlane;
-  my_target_speed = speed_mph;
+      break;
+      /* -------------------------------------------------------------*/
 
-  if (behavior_state == "KeepLane"){
-    if (targetlane != car_lane) {
-      behavior_state = "LaneChange";
-    }
+    case 	PREP_LANE_CHANGE_LEFT:
+      behavior_state = LANE_CHANGE_LEFT;
+      break;
+      /* -------------------------------------------------------------*/
+
+    case 	PREP_LANE_CHANGE_RIGHT:
+      behavior_state = LANE_CHANGE_RIGHT;
+      break;
+      /* -------------------------------------------------------------*/
+
+    case LANE_CHANGE_LEFT:
+    case LANE_CHANGE_RIGHT:
+
+      my_next_lane = my_target_lane;
+      double lanecenter = (4.0*my_next_lane) + 2.0;
+      if(fabs(car_d-lanecenter)<0.5){ // within +/- 1.0m of target lane center
+        behavior_state = KEEP_LANE;
+      }
+
+      break;
+      /* -------------------------------------------------------------*/
+
   }
-  else if (behavior_state == "LaneChange"){
-    my_next_lane = my_target_lane;
-    double lanecenter = (4.0*my_next_lane) + 2.0;
-    if(abs(car_d-lanecenter)<0.6){ // within +/- 1.0m of target lane center
-      behavior_state = "KeepLane";
-    }
-  }
-
 }
 
 void Path::trajectory(vector<double> previous_path_x, vector<double> previous_path_y, double end_path_s, double end_path_d){
@@ -248,11 +266,11 @@ void Path::trajectory(vector<double> previous_path_x, vector<double> previous_pa
   int path_size = previous_path_x.size();
 
   double ref_vel = my_target_speed;
-  double ref_lane = my_target_lane;
-  // double ref_lane = my_next_lane;
+  // double ref_lane = my_target_lane;
+  double ref_lane = my_next_lane;
 
   int prevpts; //path_size;
-  if ((behavior_state == "LaneChange") || (my_target_speed<car_speed)){
+  if ((behavior_state == LANE_CHANGE_LEFT) || (behavior_state == LANE_CHANGE_RIGHT) || (my_target_speed<car_speed)){
     prevpts = 25;
   }else{
     prevpts = 40; //path_size;
@@ -302,7 +320,7 @@ void Path::trajectory(vector<double> previous_path_x, vector<double> previous_pa
   vector<double> next_wp1;
   vector<double> next_wp2;
   //if (car_speed > 30.0) {
-  if (behavior_state == "LaneChange"){
+  if ((behavior_state == LANE_CHANGE_LEFT)||(behavior_state == LANE_CHANGE_RIGHT)){
     next_wp0 = getXY(pos_s+30,(ref_lane*4)+2,map_waypoints_s,map_waypoints_x,map_waypoints_y);
     next_wp1 = getXY(pos_s+60,(ref_lane*4)+2,map_waypoints_s,map_waypoints_x,map_waypoints_y);
     next_wp2 = getXY(pos_s+90,(ref_lane*4)+2,map_waypoints_s,map_waypoints_x,map_waypoints_y);
