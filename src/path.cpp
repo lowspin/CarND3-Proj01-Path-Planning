@@ -214,6 +214,7 @@ void Path::behavior() {
   double closest_car_s;
 
   double avail_gap_behind, avail_gap_infront;
+  double relspeed;
   bool SAFE2PASS;
 
   switch (behavior_state) {
@@ -281,23 +282,31 @@ void Path::behavior() {
 
       //check future position - 1 sec ahead
       //avail_gap = (car_speed*1.0) - (obs_behind_speed[my_target_lane]*1.0) - obs_behind_dist[my_target_lane];
+
       SAFE2PASS = true;
-      if (avail_gap_behind < 1.5*onecarlength) SAFE2PASS = false;
-      if (avail_gap_infront < 1.5*onecarlength) SAFE2PASS = false;
-      if ((obs_behind_speed[my_target_lane]-car_speed)>10.0) SAFE2PASS = false; // watch out for fast car behind!
-      // if (obs_ahead_dist[car_lane]<1.5*onecarlength) SAFE2PASS = false;
-      if ((obs_ahead_dist[car_lane]/(car_speed-obs_ahead_speed[car_lane]))<0.6) // risk colliding with front obs
+
+      // target lane - behind
+      relspeed = obs_behind_speed[my_target_lane]-car_speed;
+      if (avail_gap_behind-(relspeed*0.6) < 1.0*onecarlength)
         SAFE2PASS = false;
 
-      // beware of other side cutting into same lane (only for center lane)
+      // target lane -ahead
+      relspeed = obs_ahead_speed[my_target_lane]-car_speed;
+      if (avail_gap_infront+(relspeed*0.6) < 1.0*onecarlength)
+        SAFE2PASS = false;
+
+      // current lane - ahead
+      relspeed = car_speed-obs_ahead_speed[car_lane];
+      if (obs_ahead_dist[car_lane]-(relspeed*0.6) < 1.0*onecarlength)
+        SAFE2PASS = false;
+
+      // beware of other side cutting into same lane when changing to center lane
       if(my_target_lane == 1) {
         int otherlane = (car_lane==2)? 2 : 0;
-
-        // avoid collision: if not changing lanes, all cars should be heading the same direction
-        // if ( (abs(car_yaw-obs_behind_yaw[otherlane])>40.0) && (obs_behind_dist[otherlane]<5.0) ) {
-        if ( (obs_behind_speed[otherlane]>car_speed-5.0) && (obs_behind_dist[otherlane]<5.0) ) {
+        relspeed = obs_behind_speed[otherlane]-car_speed;
+        if ( (relspeed>1.0) && (obs_behind_dist[otherlane]<1.0*onecarlength) ) {
           SAFE2PASS = false;
-          cout << "check!" << endl;
+          cout << "WATCH OUT!" << endl;
         }
       }
 
