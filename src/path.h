@@ -46,10 +46,8 @@ struct Path_XY {
 
 enum BehaviorState {
 	KEEP_LANE,
-	PREP_LANE_CHANGE_LEFT,
-	LANE_CHANGE_LEFT,
-	PREP_LANE_CHANGE_RIGHT,
-	LANE_CHANGE_RIGHT
+	PREP_LANE_CHANGE,
+	LANE_CHANGE
  };
 
 class Path {
@@ -90,8 +88,10 @@ public:
 	std::vector< std::vector<double>> traffic_now;
 	double obs_ahead_dist[3]; // one for each lane
 	double obs_ahead_speed[3]; // one for each lane
+	double obs_ahead_yaw[3]; // one for each lane
 	double obs_behind_dist[3]; // one for each lane
 	double obs_behind_speed[3]; // one for each lane
+	double obs_behind_yaw[3]; // one for each lane
 
 	// Main car's target location and speed
 	double my_target_s;
@@ -109,6 +109,7 @@ public:
 	void updateLocalData(double x,double y,double s,double d,double yaw,double speed);
 
 	int whichLane();
+	void checkTrajectory(double startspeed);
 
 	void prediction(std::vector< std::vector<double>> sensor_fusion);
 	void behavior();
