@@ -118,20 +118,14 @@ int main() {
           	vector<double> next_y_vals;
 
 
-          	// TODO: define a path made up of (x,y) points that the car will visit sequentially every .02 seconds
+          	// define a path made up of (x,y) points that the car will visit sequentially every .02 seconds
             path.updateLocalData(car_x,car_y,car_s,car_d,car_yaw,car_speed);
-            // cout << "main: " <<  car_x << ", " << car_y << endl;
 
             path.current_time = chrono::high_resolution_clock::now();
   					auto time_difference = chrono::duration_cast<std::chrono::milliseconds>(path.current_time - path.start_time).count();
-  					// cout << "previous_path_size " << previous_path_x.size() << endl;
-  					// cout << time_difference << endl;
-  					// cout << chrono::high_resolution_clock::to_time_t(chrono::high_resolution_clock::now()) << endl;
 
   					if (time_difference > 0)
             {
-  						//cout <<  "time_difference " << time_difference << endl;
-
   						// 0. set clock for next round
   						path.start_time = chrono::high_resolution_clock::now();
 
