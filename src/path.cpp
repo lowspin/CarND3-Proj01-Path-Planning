@@ -169,7 +169,7 @@ double Path::adjustSpeed(double speed) {
   double speed_mph = speed;
 
   // limit acceleration or deceleration
-  if(car_speed>0.0) {
+  if (false) { //}(car_speed>0.0) {
     if (speed_mph>car_speed)
       speed_mph = ( (speed_mph-car_speed) > 3.0 )? car_speed+3.0 : speed_mph;
     else
@@ -436,7 +436,7 @@ void Path::trajectory(vector<double> previous_path_x, vector<double> previous_pa
 
   // prevpts = (car_speed>40)? 30 : 25;
   // prevpts = (path_size<prevpts)?path_size:prevpts;
-
+  double check_interval;
   if( prevpts<2 )
   {
     pos_x = car_x;
@@ -445,6 +445,8 @@ void Path::trajectory(vector<double> previous_path_x, vector<double> previous_pa
     prev_x = car_x - cos(angle);
     prev_y = car_y - sin(angle);
     pos_s = car_s;
+
+    check_interval = 0.0;
   }
   else
   {
@@ -457,6 +459,8 @@ void Path::trajectory(vector<double> previous_path_x, vector<double> previous_pa
 
     vec_sd = getFrenet(pos_x, pos_y, angle, map_waypoints_x, map_waypoints_y);
     pos_s = vec_sd[0];
+
+    check_interval = distance(prev_x,prev_y,pos_x,pos_y);
   }
 
   ptsx.push_back(prev_x);
@@ -464,7 +468,6 @@ void Path::trajectory(vector<double> previous_path_x, vector<double> previous_pa
   ptsy.push_back(prev_y);
   ptsy.push_back(pos_y);
 
-  double check_interval = distance(prev_x,prev_y,pos_x,pos_y);
   cout << check_interval << " - ";
 
   vector<double> next_wp0;
@@ -567,33 +570,45 @@ void Path::trajectory(vector<double> previous_path_x, vector<double> previous_pa
   double req_delta_x = target_x/N;
   // cout << " (" << req_delta_x << ") ";
   //
-  // double max_change_interval = 9.0 * 0.02 * 0.02;
-  // int num_fillers = 0;
-  // double delta_x;
-  // if ( req_delta_x-check_interval > max_change_interval) { // acceleration
-  //   delta_x = check_interval + max_change_interval;
-  //   num_fillers = floor(req_delta_x / check_interval);
-  // } else if ( check_interval-req_delta_x > max_change_interval) { // deceleration
-  //   num_fillers = floor(check_interval / req_delta_x);
-  //   delta_x = check_interval - max_change_interval;
-  // } else {
-  //   num_fillers = 0;
-  //   delta_x = req_delta_x;
-  // }
+  double max_change_interval = 9.9 * 0.02 * 0.02;
+  int num_fillers = 0;
+  double delta_x;
+  bool acceleration = true;
+  if ( req_delta_x-check_interval > max_change_interval) { // acceleration
+    delta_x = check_interval + max_change_interval;
+    num_fillers = floor(req_delta_x / check_interval);
+    acceleration = true;
+  } else if ( check_interval-req_delta_x > max_change_interval) { // deceleration
+    num_fillers = floor(check_interval / req_delta_x);
+    delta_x = check_interval - max_change_interval;
+    acceleration = false;
+  } else {
+    num_fillers = 0;
+    delta_x = req_delta_x;
+  }
 
   for (int i=1; i<=50-prevpts; i++)
   {
     // x_point = x_add_on + (target_x/N);
-    x_point = x_add_on + req_delta_x;
+    x_point = x_add_on + delta_x;
     // change interval gradually until target
-    // if (num_fillers>0) {
-    //   cout << "<[" << num_fillers << "]> ";
-    //   // cout << x_point << " = " << x_add_on << " + " <<delta_x << endl;
-    //   delta_x += max_change_interval;
-    //   if (delta_x > req_delta_x) // overshot
-    //     delta_x = req_delta_x;
-    //   num_fillers--;
-    // }
+    // cout << " " << delta_x << " ";
+    if (num_fillers>0) {
+      // cout << "<[" << num_fillers << "]> ";
+      // cout << x_point << " = " << x_add_on << " + " <<delta_x << endl;
+      if (acceleration) {
+        delta_x += max_change_interval;
+        if (delta_x > req_delta_x) // overshot
+        delta_x = req_delta_x;
+      }
+      else
+      {
+        delta_x -= max_change_interval;
+        if (delta_x < req_delta_x) // overshot
+        delta_x = req_delta_x;
+      }
+      num_fillers--;
+    }
 
     y_point = s(x_point);
 
