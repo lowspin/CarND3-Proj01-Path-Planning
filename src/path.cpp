@@ -60,6 +60,7 @@ void Path::prediction(vector< vector<double>> sensor_fusion) {
   vector<double> obs_future;
   double time_horizon_sec = 1.0;
   int lane;
+  int check_count = 0;
 
   traffic_now.clear();
   traffic_future.clear();
@@ -83,7 +84,7 @@ void Path::prediction(vector< vector<double>> sensor_fusion) {
 
     vx = traffic_now[i][3];
     vy = traffic_now[i][4];
-    check_speed = sqrt((vx*vx)+(vy*vy));
+    check_speed = sqrt((vx*vx)+(vy*vy)); // in m/s
 
     // if near track end-start loop boundary, adjust s
     double range_s = 200.0;
@@ -96,20 +97,23 @@ void Path::prediction(vector< vector<double>> sensor_fusion) {
 
     // figure out closest obstacle cars in front and behind
     for(int ln=0; ln<3; ln++){
+
       if (lane == ln){
+
+        check_count++;
 
         // obs ahead
         if ( (check_s_now>car_s) && (check_s_now<closest_infront_s[ln]) ) {
           closest_infront_s[ln] = check_s_now;
           obs_ahead_dist[ln] = check_s_now - car_s;
-          obs_ahead_speed[ln] = check_speed;
+          obs_ahead_speed[ln] = check_speed; // in m/s
         }
 
         // obs behind
-        else if ( (check_s_now<car_s) && (check_s_now>closest_behind_s[ln]) ) {
+        else if ( (check_s_now<=car_s) && (check_s_now>closest_behind_s[ln]) ) {
           closest_behind_s[ln] = check_s_now;
           obs_behind_dist[ln] = car_s - check_s_now;
-          obs_behind_speed[ln] = check_speed;
+          obs_behind_speed[ln] = check_speed; // in m/s
         }
 
       } // if (lane == car_lane)
@@ -123,17 +127,6 @@ void Path::prediction(vector< vector<double>> sensor_fusion) {
 
     //predict future gap in 1 sec
     lanescore[ln] += (lanescore[ln]<9999.9)? (obs_ahead_speed[ln]-car_speed)*1.0 : 0.0;
-
-    // if(ln!=car_lane)
-    // {
-    //   // watch out for fast cars behind!
-    //   if (obs_behind_dist[ln]<9999.9) {
-    //     double time2close = (obs_behind_dist[ln]-car_speed)/obs_behind_speed[ln];
-    //     if ((time2close>0.0)&&(time2close<0.5)) { // dist/speed = time
-    //       lanescore[ln] = -9999.9; // behind car catches up within x secs.
-    //     }
-    //   }
-    // }
   }
 
   if (_DEBUG_PRINT) { // _DEBUG_PRINT
@@ -168,24 +161,12 @@ int Path::whichLane() {
 double Path::adjustSpeed(double speed) {
   double speed_mph = speed;
 
-  // limit acceleration or deceleration
-  if (false) { //}(car_speed>0.0) {
-    if (speed_mph>car_speed)
-      speed_mph = ( (speed_mph-car_speed) > 3.0 )? car_speed+3.0 : speed_mph;
-    else
-      speed_mph = ( (speed_mph-car_speed) < -3.0 )? car_speed-3.0 : speed_mph;
-  }
-
-  // else {
-  //   if (speed_mph>car_speed)
-  //     speed_mph = ( (speed_mph-car_speed) > 3.0 )? car_speed+2.0 : speed_mph;
-  //   else
-  //     speed_mph = ( (speed_mph-car_speed) < -3.0 )? car_speed-2.0 : speed_mph;
-  // }
-
   // Final -  Hard limits
   speed_mph = (speed_mph<=0.0)? 0.0 : speed_mph; // speed cannot be zero
   speed_mph = (speed_mph>speed_limit)? speed_limit : speed_mph;
+
+  // if(_DEBUG_PRINT)
+  //   cout << "limit target speed: " << speed << " -> " << speed_mph << endl;
 
   return speed_mph;
 }
@@ -206,16 +187,16 @@ void Path::behavior() {
   switch (behavior_state) {
 
     /* ------------------ */
-    /* KEEP LANE
+    /* STATE [0] : KEEP LANE
     /* ------------------ */
     case KEEP_LANE:
 
-      if (obs_ahead_dist[car_lane]<30.0) {
+      if (obs_ahead_dist[car_lane]<5.0*ONECARLENGTH) {
 
         too_close = true;
 
         speed_mph = obs_ahead_speed[car_lane] * MPS2MPH; // match speed of car ahead
-        if (obs_ahead_dist[car_lane]<3.0*ONECARLENGTH) { // keep a safe following distance
+        if (obs_ahead_dist[car_lane]<2.5*ONECARLENGTH) { // keep a safe following distance
           speed_mph -= (car_speed>10.0)? 3.0 : 2.0;
         }
 
@@ -249,7 +230,7 @@ void Path::behavior() {
       /* -------------------------------------------------------------*/
 
     /* ------------------ */
-    /* PREPARE LANE_CHANGE
+    /* STATE [1] : PREPARE LANE_CHANGE
     /* ------------------ */
     case 	PREP_LANE_CHANGE:
 
@@ -270,39 +251,36 @@ void Path::behavior() {
       // target lane - behind
       if (obs_behind_speed[my_target_lane]>0) {
         relspeed = obs_behind_speed[my_target_lane]-(car_speed*MPH2MPS);
-        // avail_gap = (relspeed>0)?obs_behind_dist[my_target_lane]-(relspeed*0.5):obs_behind_dist[my_target_lane];
-        avail_gap = obs_behind_dist[my_target_lane]-(relspeed*0.5);
+        avail_gap = obs_behind_dist[my_target_lane]-(relspeed*1.0);
         safe_gap = (car_speed<30)? 2.5*ONECARLENGTH : 4.0*ONECARLENGTH;
         if ((avail_gap<0) || (avail_gap < safe_gap)) {
-          // SAFE2PASS = false;
           UNSAFE3_targetback = true;
-          cout << "Watch out - target lane behind. avail_gap = " << avail_gap << endl;
+          if(_DEBUG_PRINT)
+            cout << "Watch out - target lane behind. avail_gap = " << avail_gap << endl;
         }
       }
 
       // target lane - ahead
       if (obs_ahead_speed[my_target_lane]>0) {
         relspeed = (car_speed*MPH2MPS) - obs_ahead_speed[my_target_lane];
-        // avail_gap = (relspeed>0)? obs_ahead_dist[my_target_lane]-(relspeed*0.5) : obs_ahead_dist[my_target_lane];
-        avail_gap = obs_ahead_dist[my_target_lane]-(relspeed*0.5);
+        avail_gap = obs_ahead_dist[my_target_lane]-(relspeed*1.0);
         safe_gap = (car_speed<30)? 2.0*ONECARLENGTH : 3.0*ONECARLENGTH;
         if ((avail_gap<0) || (avail_gap < safe_gap)) {
-          // SAFE2PASS = false;
           UNSAFE2_targetfront = true;
-          cout << "Watch out - target lane ahead. avail_gap = " << avail_gap << endl;
+          if(_DEBUG_PRINT)
+            cout << "Watch out - target lane ahead. avail_gap = " << avail_gap << endl;
         }
       }
 
       // own lane - ahead
       if (obs_ahead_speed[car_lane]>0) {
         relspeed = (car_speed*MPH2MPS) - obs_ahead_speed[car_lane];
-        // avail_gap = (relspeed>0)? obs_ahead_dist[car_lane]-(relspeed*1.0) : obs_ahead_dist[car_lane];
         avail_gap = obs_ahead_dist[car_lane]-(relspeed*1.0);
-        safe_gap = (car_speed<30)? 2.0*ONECARLENGTH : 3.0*ONECARLENGTH;
+        safe_gap = (car_speed<30)? 2.0*ONECARLENGTH : 2.5*ONECARLENGTH;
         if ((avail_gap<0) || (avail_gap < safe_gap)) {
-          // SAFE2PASS = false;
           UNSAFE1_ownfront = true;
-          cout << "Watch out - own lane ahead. avail_gap = " << avail_gap << endl;
+          if(_DEBUG_PRINT)
+            cout << "Watch out - own lane ahead. avail_gap = " << avail_gap << endl;
         }
       }
 
@@ -313,18 +291,18 @@ void Path::behavior() {
         if (obs_behind_speed[otherlane]>0) {
           relspeed = obs_behind_speed[otherlane]-(car_speed*MPH2MPS);
           if ( (relspeed>1.0) && (obs_behind_dist[otherlane]<1.0*ONECARLENGTH) ) {
-            // SAFE2PASS = false;
             UNSAFE4_cross = true;
-            cout << "WATCH OUT: CROSS FROM BEHIND!" << endl;
+            if(_DEBUG_PRINT)
+              cout << "WATCH OUT: CROSS FROM BEHIND!" << endl;
           }
         }
         // cross traffic - ahead
         if (obs_ahead_speed[otherlane]>0) {
           relspeed = obs_ahead_speed[otherlane]-(car_speed*MPH2MPS);
           if ( (abs(relspeed)<1.0) && (obs_ahead_dist[otherlane]<1.0*ONECARLENGTH) ) {
-            // SAFE2PASS = false;
             UNSAFE4_cross = true;
-            cout << "WATCH OUT: CROSS FROM AHEAD!" << endl;
+            if(_DEBUG_PRINT)
+              cout << "WATCH OUT: CROSS FROM AHEAD!" << endl;
           }
         }
       }
@@ -337,72 +315,107 @@ void Path::behavior() {
       }
       else
       {
-        // adjust speed to match car ahead in my lane
-        // if (obs_ahead_dist[car_lane]<3.0*ONECARLENGTH)
-        //   // target_speed = 0.9*car_speed; //target_speed = obs_ahead_speed[car_lane];
-        //   target_speed = my_target_speed - 3.0;
-
-        // keep a safe following distance
-        // if (obs_ahead_dist[car_lane]<30.0) {
-        //   target_speed = obs_ahead_speed[car_lane]*MPS2MPH;
-        //   if (obs_ahead_dist[car_lane]<3.0*ONECARLENGTH) { // too close
-        //     target_speed -= 2.0; //(car_speed>10.0)? 3.0 : 2.0;
-        //   }
-        // }
-
-        if (UNSAFE1_ownfront) {
-          target_speed = car_speed - 3.0;
-          if (obs_ahead_dist[car_lane]<3.0*ONECARLENGTH) { // too close
-            target_speed -= 2.0; //(car_speed>10.0)? 3.0 : 2.0;
-          }
-        }
-        else if (UNSAFE3_targetback && !(UNSAFE1_ownfront||UNSAFE2_targetfront||UNSAFE4_cross) { // speed up and pass
+        // Is it ok to speed up and pass?
+        if (UNSAFE3_targetback && !(UNSAFE1_ownfront||UNSAFE2_targetfront||UNSAFE4_cross)) {
           if ( (car_speed+5.0<speed_limit) &&
-                (obs_behind_dist[my_target_lane]>1.5*ONECARLENGTH) &&
-                (obs_behind_speed[my_target_lane]<=car_speed)) {
+                (obs_behind_dist[my_target_lane]>2.0*ONECARLENGTH) &&
+                (obs_behind_speed[my_target_lane]<=car_speed*MPH2MPS))
+          {
+            if ( car_speed > (obs_behind_speed[my_target_lane]*MPS2MPH)+2.0 )
+            {
+              behavior_state = LANE_CHANGE;
+              if(_DEBUG_PRINT)
+                cout << "BEEP! BEEP!" << endl;
+            }
+            else
+            {
+              behavior_state = PREP_LANE_CHANGE;
+              if(_DEBUG_PRINT)
+                cout << "VROOM!!" << endl;
+            }
             my_target_speed = adjustSpeed(car_speed + 5.0);
-            behavior_state = LANE_CHANGE;
-            cout << "BEEP! BEEP!" << endl;
             break;
           }
         }
+
+        // Is it ok to slow down and move behind car in front?
+        if (UNSAFE2_targetfront && !(UNSAFE1_ownfront||UNSAFE3_targetback||UNSAFE4_cross))
+        {
+          if (car_speed*MPH2MPS > obs_ahead_speed[my_target_lane])
+          {
+            my_target_speed = adjustSpeed(car_speed - 3.0);
+
+            // Still wanna switch lane?
+            targetlane = whichLane();
+            if (targetlane>car_lane)
+              my_target_lane = min(car_lane+1,2);
+            else if (targetlane<car_lane)
+              my_target_lane = max(car_lane-1,0);
+            else
+              my_target_lane = car_lane;
+            behavior_state = (my_target_lane!=car_lane)? PREP_LANE_CHANGE : KEEP_LANE;
+
+            if(_DEBUG_PRINT)
+              cout << "slow down..." << endl;
+          } else {
+            my_target_speed = adjustSpeed(obs_ahead_speed[my_target_lane]*MPS2MPH);
+            if ((obs_ahead_dist[my_target_lane]>4.0*ONECARLENGTH)&&(obs_ahead_dist[car_lane]>2.0*ONECARLENGTH)) {
+              behavior_state = LANE_CHANGE;
+              if(_DEBUG_PRINT)
+                cout << "careful now..." << endl;
+            } else {
+              // Still wanna switch lane?
+              targetlane = whichLane();
+              if (targetlane>car_lane)
+                my_target_lane = min(car_lane+1,2);
+              else if (targetlane<car_lane)
+                my_target_lane = max(car_lane-1,0);
+              else
+                my_target_lane = car_lane;
+              behavior_state = (my_target_lane!=car_lane)? PREP_LANE_CHANGE : KEEP_LANE;
+            }
+
+          }
+          break;
+        }
+
+        /*------ ALL OTHER CASES of UNSAFE2PASS: --------------------------- */
+        if (UNSAFE1_ownfront) {
+          target_speed = car_speed - 3.0;
+          if (obs_ahead_dist[car_lane]<2.0*ONECARLENGTH) { // way too close
+            target_speed -= 1.0;
+          }
+        }
         else {
-          // target_speed = (car_speed<5.0)? my_target_speed+3.0 : my_target_speed+4.0;
           target_speed = my_target_speed+5.0;
-          // target_speed = my_target_speed;
         }
 
         // set speed
         my_target_speed = adjustSpeed(target_speed);
-        cout << target_speed << " -> " << my_target_speed << endl;
 
         // Still wanna switch lane?
         targetlane = whichLane();
-        if (targetlane>car_lane) {
+        if (targetlane>car_lane)
           my_target_lane = min(car_lane+1,2);
-        }
-        else if (targetlane<car_lane) {
+        else if (targetlane<car_lane)
           my_target_lane = max(car_lane-1,0);
-        }
-        else {
+        else
           my_target_lane = car_lane;
-        }
         behavior_state = (my_target_lane!=car_lane)? PREP_LANE_CHANGE : KEEP_LANE;
+        /* ----------------------------------------------------------------- */
 
       }
       break;
       /* -------------------------------------------------------------*/
 
     /* ------------------ */
-    /* LANE_CHANGE
+    /* STATE [2] : LANE_CHANGE
     /* ------------------ */
     case LANE_CHANGE:
 
       my_next_lane = my_target_lane; // this is used in trajectory
 
-      // if (car_speed+2.0 < speed_limit) // speed up to pass
-        // target_speed = (car_speed>40)? car_speed+4.0 : car_speed+2.0;
-
+      // speed up to pass
       target_speed = car_speed + 3.0;
       my_target_speed = adjustSpeed(target_speed);
 
@@ -432,20 +445,10 @@ void Path::trajectory(vector<double> previous_path_x, vector<double> previous_pa
   double ref_vel = my_target_speed;
   double ref_lane = my_next_lane;
 
-  int prevpts; //path_size;
-  // if ((behavior_state == LANE_CHANGE)) { //}|| (abs(my_target_speed-car_speed)>3.0)){ //} || (my_target_speed<car_speed)){
-  //   prevpts = min(40,path_size); //(car_speed>40)? 30 : 25;
-  // }else{
-  //   prevpts = min(20,path_size);
-  // }
-  if (abs(my_target_speed-car_speed)>3.0)
-    prevpts = min(10,path_size);
-  else
-    prevpts = min(40,path_size);
+  int prevpts = min(10,path_size);
 
-  // prevpts = (car_speed>40)? 30 : 25;
-  // prevpts = (path_size<prevpts)?path_size:prevpts;
   double check_interval;
+
   if( prevpts<2 )
   {
     pos_x = car_x;
@@ -463,7 +466,6 @@ void Path::trajectory(vector<double> previous_path_x, vector<double> previous_pa
     pos_y = previous_path_y[prevpts-1];
     prev_x = previous_path_x[prevpts-2];
     prev_y = previous_path_y[prevpts-2];
-
     angle = atan2(pos_y-prev_y, pos_x-prev_x);
 
     vec_sd = getFrenet(pos_x, pos_y, angle, map_waypoints_x, map_waypoints_y);
@@ -482,36 +484,6 @@ void Path::trajectory(vector<double> previous_path_x, vector<double> previous_pa
   vector<double> next_wp2;
   vector<double> next_wp3;
   vector<double> next_wp4;
-
-  // double temp_s;
-  //
-  // if (behavior_state == LANE_CHANGE) {
-  //   // take care of end/start boundary adjustments
-  //   temp_s = (car_speed<30)? pos_s+30 : pos_s+30; //30;
-  //   temp_s -= (temp_s>max_s)? max_s : 0.0;
-  //   next_wp0 = getXY(temp_s,(ref_lane*4)+2,map_waypoints_s,map_waypoints_x,map_waypoints_y);
-  //
-  //   temp_s = (car_speed<30)? pos_s+50 : pos_s+70; //pos_s+70;
-  //   temp_s -= (temp_s>max_s)? max_s : 0.0;
-  //   next_wp1 = getXY(temp_s,(ref_lane*4)+2,map_waypoints_s,map_waypoints_x,map_waypoints_y);
-  //
-  //   temp_s = (car_speed<30)? pos_s+80 : pos_s+90; //pos_s+90;
-  //   temp_s -= (temp_s>max_s)? max_s : 0.0;
-  //   next_wp2 = getXY(temp_s,(ref_lane*4)+2,map_waypoints_s,map_waypoints_x,map_waypoints_y);
-  // } else {
-  //   // take care of end/start boundary adjustments
-  //   temp_s = (car_speed<30)? pos_s+30 : pos_s+40; //pos_s+30;
-  //   temp_s -= (temp_s>max_s)? max_s : 0.0;
-  //   next_wp0 = getXY(temp_s,(ref_lane*4)+2,map_waypoints_s,map_waypoints_x,map_waypoints_y);
-  //
-  //   temp_s = (car_speed<30)? pos_s+50 : pos_s+70; //pos_s+75;
-  //   temp_s -= (temp_s>max_s)? max_s : 0.0;
-  //   next_wp1 = getXY(temp_s,(ref_lane*4)+2,map_waypoints_s,map_waypoints_x,map_waypoints_y);
-  //
-  //   temp_s = (car_speed<30)? pos_s+80 : pos_s+90; //pos_s+90;
-  //   temp_s -= (temp_s>max_s)? max_s : 0.0;
-  //   next_wp2 = getXY(temp_s,(ref_lane*4)+2,map_waypoints_s,map_waypoints_x,map_waypoints_y);
-  // }
 
   next_wp0 = getXY(pos_s+30,(ref_lane*4)+2,map_waypoints_s,map_waypoints_x,map_waypoints_y);
   next_wp1 = getXY(pos_s+50,(ref_lane*4)+2,map_waypoints_s,map_waypoints_x,map_waypoints_y);
@@ -549,18 +521,14 @@ void Path::trajectory(vector<double> previous_path_x, vector<double> previous_pa
   planned_path.x.clear();
   planned_path.y.clear();
 
-  // for(int i = 0; i < path_size; i++)
   for(int i = 0; i < prevpts; i++)
   {
-    // assume end/start boundary already taken care of
+    // assume end/start track boundary already taken care of
     planned_path.x.push_back(previous_path_x[i]);
     planned_path.y.push_back(previous_path_y[i]);
   }
 
   // break up spline points to match velocity
-  // double target_x = 30.0;
-  // double target_x = (car_speed<40)? 30 : 60; //50.0; //30.0;
-  // double target_x = (behavior_state == LANE_CHANGE)? 40 : 30;
   double target_x = 30; //(behavior_state != KEEP_LANE)? 60 : 30;
   double target_y = s(target_x);
   double target_dist = sqrt( (target_x*target_x) + (target_y*target_y));
@@ -569,18 +537,15 @@ void Path::trajectory(vector<double> previous_path_x, vector<double> previous_pa
   double x_point = 0.0;
   double y_point = 0.0;
 
-  // prev_x = (path_size>0) ? previous_path_x[prevpts-1] : 0.0;
-  // prev_y = (path_size>0) ? previous_path_y[prevpts-1] : 0.0;
-  // double prev_dist = -1.0;
-  // double curr_dist = -1.0;
   double N = (target_dist/(.02*ref_vel*MPH2MPS));
   double req_delta_x = target_x/N;
-  // cout << " (" << req_delta_x << ") ";
-  //
+
   double max_change_interval = 9.99 * 0.02 * 0.02;
   int num_fillers = 0;
   double delta_x;
   bool acceleration = true;
+
+  // initial waypoint interval and number of intermediate intervals
   if ( req_delta_x-check_interval > max_change_interval) { // acceleration
     delta_x = check_interval + max_change_interval;
     num_fillers = floor(req_delta_x / check_interval);
@@ -594,15 +559,16 @@ void Path::trajectory(vector<double> previous_path_x, vector<double> previous_pa
     delta_x = req_delta_x;
   }
 
+  if(_DEBUG_PRINT)
+    cout << "Trajectory speed change " << (delta_x/0.02)*MPS2MPH << " -> ";
+
   for (int i=1; i<=50-prevpts; i++)
   {
     // x_point = x_add_on + (target_x/N);
     x_point = x_add_on + delta_x;
+
     // change interval gradually until target
-    // cout << " " << delta_x << " ";
     if (num_fillers>0) {
-      // cout << "<[" << num_fillers << "]> ";
-      // cout << x_point << " = " << x_add_on << " + " <<delta_x << endl;
       if (acceleration) {
         delta_x += max_change_interval;
         if (delta_x > req_delta_x) // overshot
@@ -634,5 +600,6 @@ void Path::trajectory(vector<double> previous_path_x, vector<double> previous_pa
     planned_path.x.push_back(x_point);
     planned_path.y.push_back(y_point);
   }
-
+  if(_DEBUG_PRINT)
+    cout << (delta_x/0.02)*MPS2MPH << "\n" << endl;
 }
