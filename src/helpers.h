@@ -5,8 +5,9 @@
 #include <cmath>
 #include <vector>
 
-const double Mph2mps = 0.44704;
-const double mps2Mph = 2.23694;
+const double MPH2MPS = 0.44704;
+const double MPS2MPH = 2.23694;
+const double ONECARLENGTH = 4.0;
 
 using namespace std;
 
