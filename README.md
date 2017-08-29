@@ -10,7 +10,7 @@ In this project your goal is to safely navigate around a virtual highway with ot
 3. Compile: `cmake .. && make`
 4. Run it: `./path_planning`.
 
-## Code compopents
+## Code components
 The code is split into 3 parts:
 * `main.cpp` handles the communication with the udacity simulator and calls each individual functions during each processing frame.
 * `path.cpp/path.h` contains all main functionalities of the path planner.
