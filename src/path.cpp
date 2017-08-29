@@ -607,7 +607,7 @@ void Path::trajectory(vector<double> previous_path_x, vector<double> previous_pa
   double N = (target_dist/(.02*ref_vel*MPH2MPS));
   double req_delta_x = target_x/N;
 
-  double max_change_interval = 9.9 * 0.02 * 0.02;
+  double max_change_interval = 9.85 * 0.02 * 0.02;
   int num_fillers = 0;
   bool acceleration = true;
 
