@@ -152,7 +152,7 @@ int Path::whichLane() {
   }
 
   // only change if difference is significant (prevent changing lanes back and forth)
-  if ((bestscore<0)||(bestscore-lanescore[car_lane]<2.0))
+  if ((bestscore<0)||(bestscore-lanescore[car_lane]<0.5*ONECARLENGTH))
     return car_lane;
   else
     return targetlane;
@@ -164,9 +164,6 @@ double Path::adjustSpeed(double speed) {
   // Final -  Hard limits
   speed_mph = (speed_mph<=0.0)? 0.0 : speed_mph; // speed cannot be zero
   speed_mph = (speed_mph>speed_limit)? speed_limit : speed_mph;
-
-  // if(_DEBUG_PRINT)
-  //   cout << "limit target speed: " << speed << " -> " << speed_mph << endl;
 
   return speed_mph;
 }
@@ -212,19 +209,13 @@ void Path::behavior() {
       my_target_speed = adjustSpeed(speed_mph);
 
       // set lane
-      if (targetlane>car_lane) {
+      if (targetlane>car_lane)
         my_target_lane = min(car_lane+1,2);
-      }
-      else if (targetlane<car_lane) {
+      else if (targetlane<car_lane)
         my_target_lane = max(car_lane-1,0);
-      }
-      else {
+      else
         my_target_lane = car_lane;
-      }
-
-      if (my_target_lane != car_lane) {
-        behavior_state = PREP_LANE_CHANGE;
-      }
+      behavior_state = (my_target_lane!=car_lane)? PREP_LANE_CHANGE : KEEP_LANE;
 
       break;
       /* -------------------------------------------------------------*/
@@ -256,7 +247,7 @@ void Path::behavior() {
         if ((avail_gap<0) || (avail_gap < safe_gap)) {
           UNSAFE3_targetback = true;
           if(_DEBUG_PRINT)
-            cout << "Watch out - target lane behind. avail_gap = " << avail_gap << endl;
+            cout << "Watch out - target lane behind. avail_gap = " << avail_gap << "\n" << endl;
         }
       }
 
@@ -268,7 +259,7 @@ void Path::behavior() {
         if ((avail_gap<0) || (avail_gap < safe_gap)) {
           UNSAFE2_targetfront = true;
           if(_DEBUG_PRINT)
-            cout << "Watch out - target lane ahead. avail_gap = " << avail_gap << endl;
+            cout << "Watch out - target lane ahead. avail_gap = " << avail_gap << "\n" << endl;
         }
       }
 
@@ -280,7 +271,7 @@ void Path::behavior() {
         if ((avail_gap<0) || (avail_gap < safe_gap)) {
           UNSAFE1_ownfront = true;
           if(_DEBUG_PRINT)
-            cout << "Watch out - own lane ahead. avail_gap = " << avail_gap << endl;
+            cout << "Watch out - own lane ahead. avail_gap = " << avail_gap << "\n" << endl;
         }
       }
 
@@ -293,7 +284,7 @@ void Path::behavior() {
           if ( (relspeed>1.0) && (obs_behind_dist[otherlane]<1.0*ONECARLENGTH) ) {
             UNSAFE4_cross = true;
             if(_DEBUG_PRINT)
-              cout << "WATCH OUT: CROSS FROM BEHIND!" << endl;
+              cout << "WATCH OUT: CROSS FROM BEHIND!\n" << endl;
           }
         }
         // cross traffic - ahead
@@ -302,7 +293,7 @@ void Path::behavior() {
           if ( (abs(relspeed)<1.0) && (obs_ahead_dist[otherlane]<1.0*ONECARLENGTH) ) {
             UNSAFE4_cross = true;
             if(_DEBUG_PRINT)
-              cout << "WATCH OUT: CROSS FROM AHEAD!" << endl;
+              cout << "WATCH OUT: CROSS FROM AHEAD!\n" << endl;
           }
         }
       }
@@ -311,39 +302,68 @@ void Path::behavior() {
 
       if ( SAFE2PASS )
       {
+        // speed to pass
+        my_target_speed = adjustSpeed(car_speed + 3.0);
         behavior_state =  LANE_CHANGE;
       }
       else
       {
+        // back-off to keep a safe distance
+        if (UNSAFE1_ownfront) {
+          target_speed = car_speed - 3.0;
+          if (obs_ahead_dist[car_lane]<2.0*ONECARLENGTH) { // way too close
+            target_speed -= 1.0;
+          }
+
+          // set speed
+          my_target_speed = adjustSpeed(target_speed);
+
+          // Still wanna switch lane?
+          targetlane = whichLane();
+          if (targetlane>car_lane)
+            my_target_lane = min(car_lane+1,2);
+          else if (targetlane<car_lane)
+            my_target_lane = max(car_lane-1,0);
+          else
+            my_target_lane = car_lane;
+          behavior_state = (my_target_lane!=car_lane)? PREP_LANE_CHANGE : KEEP_LANE;
+
+          break;
+        }
+
         // Is it ok to speed up and pass?
         if (UNSAFE3_targetback && !(UNSAFE1_ownfront||UNSAFE2_targetfront||UNSAFE4_cross)) {
-          if ( (car_speed+5.0<speed_limit) &&
-                (obs_behind_dist[my_target_lane]>2.0*ONECARLENGTH) &&
+          if ( (obs_behind_dist[my_target_lane]>2.0*ONECARLENGTH) &&
                 (obs_behind_speed[my_target_lane]<=car_speed*MPH2MPS))
           {
-            if ( car_speed > (obs_behind_speed[my_target_lane]*MPS2MPH)+2.0 )
+            if ( (car_speed>(obs_behind_speed[my_target_lane]*MPS2MPH)+1.0) && (obs_ahead_dist[my_target_lane]>2.0*ONECARLENGTH) )
             {
+              my_target_speed = adjustSpeed(car_speed + 3.0);
               behavior_state = LANE_CHANGE;
               if(_DEBUG_PRINT)
-                cout << "BEEP! BEEP!" << endl;
+                cout << "BEEP! BEEP!\n" << endl;
             }
             else
             {
-              behavior_state = PREP_LANE_CHANGE;
+              my_target_speed = adjustSpeed(car_speed + 3.0);
+              behavior_state = PREP_LANE_CHANGE; // no change
               if(_DEBUG_PRINT)
-                cout << "VROOM!!" << endl;
+                cout << "VROOM!!\n" << endl;
             }
-            my_target_speed = adjustSpeed(car_speed + 5.0);
             break;
           }
         }
 
-        // Is it ok to slow down and move behind car in front?
+        // Is it ok to slow down and move behind car?
         if (UNSAFE2_targetfront && !(UNSAFE1_ownfront||UNSAFE3_targetback||UNSAFE4_cross))
         {
           if (car_speed*MPH2MPS > obs_ahead_speed[my_target_lane])
           {
-            my_target_speed = adjustSpeed(car_speed - 3.0);
+            // my_target_speed = adjustSpeed(car_speed - 2.0);
+            my_target_speed = adjustSpeed(obs_ahead_speed[my_target_lane]*MPS2MPH - 1.0);
+
+            if(_DEBUG_PRINT)
+            cout << "slow down...\n" << endl;
 
             // Still wanna switch lane?
             targetlane = whichLane();
@@ -354,41 +374,34 @@ void Path::behavior() {
             else
               my_target_lane = car_lane;
             behavior_state = (my_target_lane!=car_lane)? PREP_LANE_CHANGE : KEEP_LANE;
-
+          }
+          else if ((obs_ahead_dist[my_target_lane]>4.0*ONECARLENGTH)&&(obs_ahead_dist[car_lane]>2.0*ONECARLENGTH))
+          {
+            // do not speed up!
+            behavior_state = LANE_CHANGE;
             if(_DEBUG_PRINT)
-              cout << "slow down..." << endl;
-          } else {
-            my_target_speed = adjustSpeed(obs_ahead_speed[my_target_lane]*MPS2MPH);
-            if ((obs_ahead_dist[my_target_lane]>4.0*ONECARLENGTH)&&(obs_ahead_dist[car_lane]>2.0*ONECARLENGTH)) {
-              behavior_state = LANE_CHANGE;
-              if(_DEBUG_PRINT)
-                cout << "careful now..." << endl;
-            } else {
-              // Still wanna switch lane?
-              targetlane = whichLane();
-              if (targetlane>car_lane)
-                my_target_lane = min(car_lane+1,2);
-              else if (targetlane<car_lane)
-                my_target_lane = max(car_lane-1,0);
-              else
-                my_target_lane = car_lane;
-              behavior_state = (my_target_lane!=car_lane)? PREP_LANE_CHANGE : KEEP_LANE;
-            }
+              cout << "careful now...\n" << endl;
+          }
+          else
+          {
+            // my_target_speed = adjustSpeed(obs_ahead_speed[my_target_lane]*MPS2MPH);
+            my_target_speed = adjustSpeed(car_speed + 2.0); // already checked UNSAFE1_ownfront=false
 
+            // Still wanna switch lane?
+            targetlane = whichLane();
+            if (targetlane>car_lane)
+              my_target_lane = min(car_lane+1,2);
+            else if (targetlane<car_lane)
+              my_target_lane = max(car_lane-1,0);
+            else
+              my_target_lane = car_lane;
+            behavior_state = (my_target_lane!=car_lane)? PREP_LANE_CHANGE : KEEP_LANE;
           }
           break;
         }
 
         /*------ ALL OTHER CASES of UNSAFE2PASS: --------------------------- */
-        if (UNSAFE1_ownfront) {
-          target_speed = car_speed - 3.0;
-          if (obs_ahead_dist[car_lane]<2.0*ONECARLENGTH) { // way too close
-            target_speed -= 1.0;
-          }
-        }
-        else {
-          target_speed = my_target_speed+5.0;
-        }
+        target_speed = my_target_speed+5.0;
 
         // set speed
         my_target_speed = adjustSpeed(target_speed);
@@ -415,9 +428,14 @@ void Path::behavior() {
 
       my_next_lane = my_target_lane; // this is used in trajectory
 
-      // speed up to pass
-      target_speed = car_speed + 3.0;
-      my_target_speed = adjustSpeed(target_speed);
+      // // Final check - just in case
+      // if (obs_ahead_dist[my_target_lane]>2.0*ONECARLENGTH)
+      //   // speed up to pass
+      //   target_speed = car_speed + 3.0;
+      // else
+      //   target_speed = obs_ahead_speed[my_target_lane];
+      //
+      // my_target_speed = adjustSpeed(target_speed);
 
       if (lane_from_d(car_d)==my_target_lane) {
         behavior_state = KEEP_LANE;
@@ -448,6 +466,7 @@ void Path::trajectory(vector<double> previous_path_x, vector<double> previous_pa
   int prevpts = min(10,path_size);
 
   double check_interval;
+  double delta_x;
 
   if( prevpts<2 )
   {
@@ -483,25 +502,21 @@ void Path::trajectory(vector<double> previous_path_x, vector<double> previous_pa
   vector<double> next_wp1;
   vector<double> next_wp2;
   vector<double> next_wp3;
-  vector<double> next_wp4;
 
   next_wp0 = getXY(pos_s+30,(ref_lane*4)+2,map_waypoints_s,map_waypoints_x,map_waypoints_y);
-  next_wp1 = getXY(pos_s+50,(ref_lane*4)+2,map_waypoints_s,map_waypoints_x,map_waypoints_y);
-  next_wp2 = getXY(pos_s+70,(ref_lane*4)+2,map_waypoints_s,map_waypoints_x,map_waypoints_y);
-  next_wp3 = getXY(pos_s+90,(ref_lane*4)+2,map_waypoints_s,map_waypoints_x,map_waypoints_y);
-  next_wp4 = getXY(pos_s+110,(ref_lane*4)+2,map_waypoints_s,map_waypoints_x,map_waypoints_y);
+  next_wp1 = getXY(pos_s+60,(ref_lane*4)+2,map_waypoints_s,map_waypoints_x,map_waypoints_y);
+  next_wp2 = getXY(pos_s+90,(ref_lane*4)+2,map_waypoints_s,map_waypoints_x,map_waypoints_y);
+  next_wp3 = getXY(pos_s+120,(ref_lane*4)+2,map_waypoints_s,map_waypoints_x,map_waypoints_y);
 
   ptsx.push_back(next_wp0[0]);
   ptsx.push_back(next_wp1[0]);
   ptsx.push_back(next_wp2[0]);
   ptsx.push_back(next_wp3[0]);
-  ptsx.push_back(next_wp4[0]);
 
   ptsy.push_back(next_wp0[1]);
   ptsy.push_back(next_wp1[1]);
   ptsy.push_back(next_wp2[1]);
   ptsy.push_back(next_wp3[1]);
-  ptsy.push_back(next_wp4[1]);
 
   for (int i=0; i<ptsx.size(); i++){
     //shift ref to zero
@@ -528,6 +543,15 @@ void Path::trajectory(vector<double> previous_path_x, vector<double> previous_pa
     planned_path.y.push_back(previous_path_y[i]);
   }
 
+  if(_DEBUG_PRINT) {
+    if(prevpts>1) {
+      delta_x = distance(previous_path_x[0],previous_path_y[0],previous_path_x[1],previous_path_y[1]);
+    } else {
+      delta_x = 0.0;
+    }
+    cout << "Trajectory speed change " << (delta_x/0.02)*MPS2MPH;
+  }
+
   // break up spline points to match velocity
   double target_x = 30; //(behavior_state != KEEP_LANE)? 60 : 30;
   double target_y = s(target_x);
@@ -540,9 +564,8 @@ void Path::trajectory(vector<double> previous_path_x, vector<double> previous_pa
   double N = (target_dist/(.02*ref_vel*MPH2MPS));
   double req_delta_x = target_x/N;
 
-  double max_change_interval = 9.99 * 0.02 * 0.02;
+  double max_change_interval = 9.9 * 0.02 * 0.02;
   int num_fillers = 0;
-  double delta_x;
   bool acceleration = true;
 
   // initial waypoint interval and number of intermediate intervals
@@ -560,7 +583,7 @@ void Path::trajectory(vector<double> previous_path_x, vector<double> previous_pa
   }
 
   if(_DEBUG_PRINT)
-    cout << "Trajectory speed change " << (delta_x/0.02)*MPS2MPH << " -> ";
+    cout << " -> " << (delta_x/0.02)*MPS2MPH << " -> ";
 
   for (int i=1; i<=50-prevpts; i++)
   {
