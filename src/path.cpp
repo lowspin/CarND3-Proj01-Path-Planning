@@ -173,8 +173,9 @@ void Path::behavior() {
   double target_speed = 0.0;
   double speed_mph = my_target_speed;
   double check_speed;
+  int otherlane;
 
-  bool too_close = false;
+  // bool too_close = false;
   double closest_car_s;
 
   double avail_gap, safe_gap;
@@ -190,7 +191,7 @@ void Path::behavior() {
 
       if (obs_ahead_dist[car_lane]<5.0*ONECARLENGTH) {
 
-        too_close = true;
+        // too_close = true;
 
         speed_mph = obs_ahead_speed[car_lane] * MPS2MPH; // match speed of car ahead
         if (obs_ahead_dist[car_lane]<2.5*ONECARLENGTH) { // keep a safe following distance
@@ -199,6 +200,16 @@ void Path::behavior() {
 
         // Shall we switch lane?
         targetlane = whichLane();
+
+        // set lane
+        if (targetlane>car_lane)
+          my_target_lane = min(car_lane+1,2);
+        else if (targetlane<car_lane)
+          my_target_lane = max(car_lane-1,0);
+        else
+          my_target_lane = car_lane;
+        behavior_state = (my_target_lane!=car_lane)? PREP_LANE_CHANGE : KEEP_LANE;
+
       }
       else
       {
@@ -207,15 +218,6 @@ void Path::behavior() {
 
       // set speed
       my_target_speed = adjustSpeed(speed_mph);
-
-      // set lane
-      if (targetlane>car_lane)
-        my_target_lane = min(car_lane+1,2);
-      else if (targetlane<car_lane)
-        my_target_lane = max(car_lane-1,0);
-      else
-        my_target_lane = car_lane;
-      behavior_state = (my_target_lane!=car_lane)? PREP_LANE_CHANGE : KEEP_LANE;
 
       break;
       /* -------------------------------------------------------------*/
@@ -277,7 +279,7 @@ void Path::behavior() {
 
       // beware of other side cutting into same lane when changing to center lane
       if(my_target_lane == 1) {
-        int otherlane = (car_lane==2)? 2 : 0;
+        otherlane = (car_lane==2)? 2 : 0;
         // cross traffic - behind
         if (obs_behind_speed[otherlane]>0) {
           relspeed = obs_behind_speed[otherlane]-(car_speed*MPH2MPS);
@@ -308,6 +310,10 @@ void Path::behavior() {
       }
       else
       {
+        otherlane = -1;
+        if (car_lane==1)
+          otherlane = (my_target_lane==0)? 2 : 0;
+
         // back-off to keep a safe distance
         if (UNSAFE1_ownfront) {
           target_speed = car_speed - 3.0;
@@ -357,13 +363,14 @@ void Path::behavior() {
         // Is it ok to slow down and move behind car?
         if (UNSAFE2_targetfront && !(UNSAFE1_ownfront||UNSAFE3_targetback||UNSAFE4_cross))
         {
-          if (car_speed*MPH2MPS > obs_ahead_speed[my_target_lane])
-          {
-            // my_target_speed = adjustSpeed(car_speed - 2.0);
-            my_target_speed = adjustSpeed(obs_ahead_speed[my_target_lane]*MPS2MPH - 1.0);
+          // a. front car sped away - space opned
+          if ((obs_ahead_speed[car_lane]*MPS2MPH>(obs_ahead_speed[my_target_lane]*MPS2MPH)+3.0)||
+                (obs_ahead_dist[car_lane]>8.0*ONECARLENGTH)) {
+
+            my_target_speed = adjustSpeed(car_speed+5.0);
 
             if(_DEBUG_PRINT)
-            cout << "slow down...\n" << endl;
+              cout << "speed up...\n" << endl;
 
             // Still wanna switch lane?
             targetlane = whichLane();
@@ -375,6 +382,40 @@ void Path::behavior() {
               my_target_lane = car_lane;
             behavior_state = (my_target_lane!=car_lane)? PREP_LANE_CHANGE : KEEP_LANE;
           }
+
+          // b. is there another alternative (only for center lane)?
+          else if ((car_lane==1) &&
+              ( (obs_ahead_speed[otherlane]*MPS2MPH>(obs_ahead_speed[car_lane]*MPS2MPH)+5.0)||
+                (obs_ahead_dist[otherlane]>8.0*ONECARLENGTH)) )
+          {
+            my_target_speed = adjustSpeed(car_speed+3.0);
+            my_target_lane = otherlane;
+            behavior_state = LANE_CHANGE;
+
+            if(_DEBUG_PRINT)
+              cout << "other lane...\n" << endl;
+          }
+
+          // c. slow down to match speed of adjacent target lane.
+          else if (car_speed*MPH2MPS > obs_ahead_speed[my_target_lane])
+          {
+            my_target_speed = adjustSpeed(obs_ahead_speed[my_target_lane]*MPS2MPH - 3.0);
+
+            if(_DEBUG_PRINT)
+              cout << "slow down...\n" << endl;
+
+            // Still wanna switch lane?
+            targetlane = whichLane();
+            if (targetlane>car_lane)
+              my_target_lane = min(car_lane+1,2);
+            else if (targetlane<car_lane)
+              my_target_lane = max(car_lane-1,0);
+            else
+              my_target_lane = car_lane;
+            behavior_state = (my_target_lane!=car_lane)? PREP_LANE_CHANGE : KEEP_LANE;
+          }
+
+          // d. speed matched, proceed.
           else if ((obs_ahead_dist[my_target_lane]>4.0*ONECARLENGTH)&&(obs_ahead_dist[car_lane]>2.0*ONECARLENGTH))
           {
             // do not speed up!
@@ -382,6 +423,8 @@ void Path::behavior() {
             if(_DEBUG_PRINT)
               cout << "careful now...\n" << endl;
           }
+
+          // all other cases
           else
           {
             // my_target_speed = adjustSpeed(obs_ahead_speed[my_target_lane]*MPS2MPH);
